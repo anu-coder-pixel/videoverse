@@ -29,17 +29,19 @@ import './WatchPage.css';
 
 export default function WatchPage() {
   const {
+    videos,
     selectedVideo,
     navigateToHome,
     subscribedChannels,
     toggleSubscribe,
     likedVideos,
     toggleLike,
+    dislikedVideos,
+    toggleDislike,
     watchLater,
     toggleWatchLater,
     showToast,
   } = useApp();
-  const [disliked, setDisliked] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
 
   if (!selectedVideo) {
@@ -49,20 +51,20 @@ export default function WatchPage() {
 
   const video = selectedVideo;
   const isLiked = likedVideos.has(video.id);
+  const isDisliked = dislikedVideos ? dislikedVideos.has(video.id) : false;
   const isSubscribed = subscribedChannels.has(video.channel.id);
   const isSaved = watchLater.has(video.id);
 
-  // Recommended videos (exclude current video)
-  const recommendations = MOCK_VIDEOS.filter(v => v.id !== video.id).slice(0, 8);
+  // Recommended videos (exclude current video, prefer API videos with mock fallback)
+  const videoList = videos?.length ? videos : MOCK_VIDEOS;
+  const recommendations = videoList.filter(v => v.id !== video.id).slice(0, 8);
 
   function handleLike() {
     toggleLike(video.id);
-    if (disliked) setDisliked(false);
   }
 
   function handleDislike() {
-    setDisliked(d => !d);
-    if (isLiked) toggleLike(video.id);
+    toggleDislike(video.id);
   }
 
   function handleShare() {
@@ -149,19 +151,19 @@ export default function WatchPage() {
                   <button
                     className={`watch-meta__action-btn ${isLiked ? 'watch-meta__action-btn--active' : ''}`}
                     onClick={handleLike}
-                    aria-label="Like video"
+                    aria-label={isLiked ? "Unlike video" : "Like video"}
                     aria-pressed={isLiked}
                     id="like-btn"
                   >
                     <ThumbsUp size={16} />
-                    <span>{isLiked ? formatCount(parseCount(video.likes) + 1) : video.likes}</span>
+                    <span>{isLiked ? formatCount(parseCount(video.likes) + 1, video.likes) : video.likes}</span>
                   </button>
                   <div className="watch-meta__like-divider" />
                   <button
-                    className={`watch-meta__action-btn ${disliked ? 'watch-meta__action-btn--active' : ''}`}
+                    className={`watch-meta__action-btn ${isDisliked ? 'watch-meta__action-btn--active' : ''}`}
                     onClick={handleDislike}
-                    aria-label="Dislike video"
-                    aria-pressed={disliked}
+                    aria-label={isDisliked ? "Remove dislike" : "Dislike video"}
+                    aria-pressed={isDisliked}
                     id="dislike-btn"
                   >
                     <ThumbsDown size={16} />
@@ -173,6 +175,7 @@ export default function WatchPage() {
                   onClick={() => toggleWatchLater(video.id)}
                   aria-label={isSaved ? "Remove from Watch Later" : "Save to Watch Later"}
                   title={isSaved ? "Saved to Watch Later" : "Save to Watch Later"}
+                  aria-pressed={isSaved}
                   id="save-watch-later-btn"
                 >
                   <Clock size={16} />
@@ -261,8 +264,17 @@ function parseCount(str) {
   return parseInt(str, 10) || 0;
 }
 
-function formatCount(n) {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}K`;
+function formatCount(n, originalStr = '') {
+  if (n >= 1000000) {
+    const m = n / 1000000;
+    return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
+  }
+  if (n >= 1000) {
+    const k = n / 1000;
+    if (originalStr && originalStr.includes('.')) {
+      return `${k.toFixed(1)}K`;
+    }
+    return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`;
+  }
   return String(n);
 }

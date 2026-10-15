@@ -1,16 +1,19 @@
 import { useMemo } from 'react';
 import {
   Flame, Bell, ThumbsUp, History, Clock, X,
-  CheckCircle2, Sparkles, Film
+  CheckCircle2, Sparkles, Film, Wifi, WifiOff
 } from 'lucide-react';
 import CategoryPills from '../../components/CategoryPills/CategoryPills';
 import VideoCard from '../../components/VideoCard/VideoCard';
 import { useApp } from '../../context/AppContext';
-import { MOCK_VIDEOS, MOCK_CHANNELS } from '../../data/mockData';
+import { MOCK_CHANNELS } from '../../data/mockData';
 import './HomePage.css';
 
 export default function HomePage() {
   const {
+    videos,          // live from API or local fallback
+    videosLoading,   // true while first fetch is in-flight
+    usingFallback,   // true if server was unreachable
     searchQuery,
     setSearchQuery,
     activeCategory,
@@ -33,33 +36,33 @@ export default function HomePage() {
 
   // Compute filtered videos based on currentView, activeCategory, search, etc.
   const filteredVideos = useMemo(() => {
-    let videos = [...MOCK_VIDEOS];
+    // Use whichever dataset is available (API or fallback)
+    let allVideos = Array.isArray(videos) ? videos : [];
+
+    let result = [...allVideos];
 
     // 1. Channel filter
     if (activeChannelFilter) {
-      videos = videos.filter(v => v.channel.id === activeChannelFilter);
+      result = result.filter(v => v.channel.id === activeChannelFilter);
     }
     // 2. Specific View filters
     else if (currentView === 'trending') {
-      // Sort by views parsed
-      videos = [...videos].sort((a, b) => parseViews(b.views) - parseViews(a.views));
+      result = [...result].sort((a, b) => parseViews(b.views) - parseViews(a.views));
     } else if (currentView === 'subscriptions') {
-      videos = videos.filter(v => subscribedChannels.has(v.channel.id));
+      result = result.filter(v => subscribedChannels.has(v.channel.id));
     } else if (currentView === 'liked') {
-      videos = videos.filter(v => likedVideos.has(v.id));
+      result = result.filter(v => likedVideos.has(v.id));
     } else if (currentView === 'history') {
-      // Order by history array order
-      const historySet = new Set(watchHistory);
-      videos = watchHistory
-        .map(id => videos.find(v => v.id === id))
+      result = watchHistory
+        .map(id => allVideos.find(v => v.id === id))
         .filter(Boolean);
     } else if (currentView === 'watch-later') {
-      videos = videos.filter(v => watchLater.has(v.id));
+      result = result.filter(v => watchLater.has(v.id));
     }
 
-    // 3. Category filter (applies when not in channel view)
+    // 3. Category filter
     if (!activeChannelFilter && currentView !== 'trending' && activeCategory && activeCategory !== 'All') {
-      videos = videos.filter(v =>
+      result = result.filter(v =>
         v.category.toLowerCase() === activeCategory.toLowerCase() ||
         v.tags.some(t => t.toLowerCase() === activeCategory.toLowerCase())
       );
@@ -68,7 +71,7 @@ export default function HomePage() {
     // 4. Search query filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      videos = videos.filter(v =>
+      result = result.filter(v =>
         v.title.toLowerCase().includes(q) ||
         v.channel.name.toLowerCase().includes(q) ||
         v.category.toLowerCase().includes(q) ||
@@ -76,8 +79,9 @@ export default function HomePage() {
       );
     }
 
-    return videos;
+    return result;
   }, [
+    videos,
     currentView,
     activeCategory,
     searchQuery,
@@ -90,10 +94,42 @@ export default function HomePage() {
 
   return (
     <main className="home-page" id="main-content" role="main">
-      {/* Sticky category filter */}
-      <div className="home-page__categories">
-        <CategoryPills />
-      </div>
+      {/* Fallback notice — shown when the backend is not running */}
+      {usingFallback && (
+        <div className="home-page__fallback-notice" role="alert">
+          <WifiOff size={14} aria-hidden="true" />
+          <span>
+            <strong>Offline mode:</strong> Using local sample data — start the Express server
+            to connect to the live API.
+          </span>
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {videosLoading && (
+        <div className="home-page__skeleton-grid" aria-label="Loading videos" aria-busy="true">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="video-card-skeleton">
+              <div className="video-card-skeleton__thumb" />
+              <div className="video-card-skeleton__meta">
+                <div className="video-card-skeleton__avatar" />
+                <div className="video-card-skeleton__lines">
+                  <div className="video-card-skeleton__line video-card-skeleton__line--title" />
+                  <div className="video-card-skeleton__line video-card-skeleton__line--sub" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Normal content — hidden while loading */}
+      {!videosLoading && (
+        <>
+          {/* Sticky category filter */}
+          <div className="home-page__categories">
+            <CategoryPills />
+          </div>
 
       {/* Special View Headers */}
       {currentChannel && (
@@ -261,6 +297,8 @@ export default function HomePage() {
             Browse All Videos
           </button>
         </div>
+      )}
+        </>
       )}
     </main>
   );
