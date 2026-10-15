@@ -1,0 +1,82 @@
+/* ── Category Pills ──────────────────────────────────────────────────── */
+.category-pills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: relative;
+}
+
+.category-pills__track {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: var(--space-1) 0;
+}
+
+.category-pills__track::-webkit-scrollbar {
+  display: none;
+}
+
+.category-pills__arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.category-pills__arrow:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.category-pills__pill {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.category-pills__pill:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+  transform: translateY(-1px);
+}
+
+.category-pills__pill--active {
+  background: var(--color-text-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-text-primary);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(240, 240, 255, 0.2);
+}
+
+.category-pills__pill--active:hover {
+  background: var(--color-text-primary);
+  color: var(--color-text-inverse);
+  transform: translateY(-1px);
+}
