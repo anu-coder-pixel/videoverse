@@ -2,7 +2,7 @@ import {
   Home, TrendingUp, PlaySquare, History, Clock, ThumbsUp,
   Download, Music, Gamepad2, Atom, BookOpen, ChevronRight,
   ChevronLeft, Laptop, Compass, Utensils, Trophy, Film,
-  Globe, Smile, Newspaper, Dumbbell, X
+  Globe, Smile, Newspaper, Dumbbell, User, Sparkles, Shield
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { SIDEBAR_SECTIONS, MOCK_CHANNELS } from '../../data/mockData';
@@ -17,6 +17,7 @@ const ICON_MAP = {
   Clock,
   ThumbsUp,
   Download,
+  Shield,
   Laptop,
   Gamepad2,
   Music,
@@ -30,7 +31,18 @@ const ICON_MAP = {
   Smile,
   Newspaper,
   Dumbbell,
+  User,
+  Sparkles,
 };
+
+// YouTube-style mini sidebar items for collapsed mode
+const MINI_NAV_ITEMS = [
+  { id: 'home', label: 'Home', icon: Home },
+  { id: 'trending', label: 'Trending', icon: TrendingUp },
+  { id: 'subscriptions', label: 'Subscriptions', icon: PlaySquare },
+  { id: 'history', label: 'You', icon: History },
+  { id: 'upgrade', label: 'Upgrade', icon: Sparkles },
+];
 
 export default function Sidebar() {
   const {
@@ -45,6 +57,7 @@ export default function Sidebar() {
     filterByChannel,
     subscribedChannels,
     toggleSubscribe,
+    currentUser,
   } = useApp();
 
   const collapsed = sidebarCollapsed;
@@ -59,12 +72,15 @@ export default function Sidebar() {
     if (itemId === 'history') return currentView === 'history';
     if (itemId === 'watch-later') return currentView === 'watch-later';
     if (itemId === 'liked') return currentView === 'liked';
+    if (itemId === 'downloads') return currentView === 'downloads';
+    if (itemId === 'security') return currentView === 'security';
+    if (itemId === 'upgrade') return currentView === 'upgrade';
     return activeCategory.toLowerCase() === itemId.toLowerCase();
   }
 
   return (
     <>
-      {/* Mobile backdrop */}
+      {/* Mobile backdrop overlay */}
       <div
         className="sidebar__backdrop"
         onClick={toggleSidebar}
@@ -72,10 +88,10 @@ export default function Sidebar() {
       />
 
       <aside
-        className={`sidebar glass ${collapsed ? 'sidebar--collapsed' : ''}`}
+        className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}
         aria-label="Main navigation"
       >
-        {/* Collapse toggle */}
+        {/* Collapse toggle button */}
         <button
           className="sidebar__collapse-btn"
           onClick={toggleSidebarCollapse}
@@ -85,45 +101,88 @@ export default function Sidebar() {
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
 
-        <nav className="sidebar__nav">
-          {SIDEBAR_SECTIONS.map((section, sIdx) => (
-            <div key={sIdx} className="sidebar__section">
-              {section.title && !collapsed && (
-                <p className="sidebar__section-title">{section.title}</p>
-              )}
-              <ul className="sidebar__list" role="list">
-                {section.items.map(item => {
-                  const Icon = ICON_MAP[item.icon];
-                  const active = isItemActive(item.id);
-                  return (
-                    <li key={item.id}>
-                      <button
-                        className={`sidebar__item ${active ? 'sidebar__item--active' : ''}`}
-                        onClick={() => selectSidebarItem(item.id)}
-                        title={collapsed ? item.label : undefined}
-                        id={`sidebar-nav-${item.id}`}
-                        aria-label={item.label}
-                        aria-current={active ? 'page' : undefined}
-                      >
-                        {Icon && <Icon size={18} className="sidebar__item-icon" aria-hidden="true" />}
-                        {!collapsed && (
+        {collapsed ? (
+          /* ── YouTube Mini Sidebar (Collapsed Mode) ── */
+          <nav className="sidebar__mini-nav" aria-label="Quick navigation">
+            <ul className="sidebar__mini-list" role="list">
+              {MINI_NAV_ITEMS.map(item => {
+                const Icon = item.icon;
+                const active = isItemActive(item.id);
+                return (
+                  <li key={item.id}>
+                    <button
+                      className={`sidebar__mini-item ${active ? 'sidebar__mini-item--active' : ''}`}
+                      onClick={() => selectSidebarItem(item.id)}
+                      id={`sidebar-mini-${item.id}`}
+                      aria-label={item.label}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <Icon size={22} className="sidebar__mini-icon" aria-hidden="true" />
+                      <span className="sidebar__mini-label">{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        ) : (
+          /* ── YouTube Full Expanded Sidebar ── */
+          <nav className="sidebar__nav">
+            {SIDEBAR_SECTIONS.map((section, sIdx) => (
+              <div key={sIdx} className="sidebar__section">
+                {section.title && (
+                  <p className="sidebar__section-title">{section.title}</p>
+                )}
+                <ul className="sidebar__list" role="list">
+                  {section.items.map(item => {
+                    const Icon = ICON_MAP[item.icon];
+                    const active = isItemActive(item.id);
+                    return (
+                      <li key={item.id}>
+                        <button
+                          className={`sidebar__item ${active ? 'sidebar__item--active' : ''}`}
+                          onClick={() => selectSidebarItem(item.id)}
+                          id={`sidebar-nav-${item.id}`}
+                          aria-label={item.label}
+                          aria-current={active ? 'page' : undefined}
+                        >
+                          {Icon && <Icon size={20} className="sidebar__item-icon" aria-hidden="true" />}
                           <span className="sidebar__item-label">{item.label}</span>
-                        )}
-                        {!collapsed && item.badge && (
-                          <span className="sidebar__item-badge badge badge--mock">
-                            {item.badge}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                          {item.badge && (
+                            <span className="sidebar__item-badge badge badge--mock">
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
 
-          {/* Subscriptions section */}
-          {!collapsed && (
+            {/* Premium Upgrade Banner for free / non-VIP users */}
+            {(!currentUser || currentUser.subscriptionTier !== 'vip') && (
+              <div className="sidebar__upgrade-banner">
+                <div className="sidebar__upgrade-banner-header">
+                  <Sparkles size={16} className="sidebar__upgrade-sparkle" />
+                  <span>Go Premium</span>
+                </div>
+                <p className="sidebar__upgrade-banner-text">
+                  Unlock 25/day or unlimited downloads & exclusive badges.
+                </p>
+                <button
+                  type="button"
+                  className="sidebar__upgrade-banner-btn"
+                  onClick={() => selectSidebarItem('upgrade')}
+                  id="sidebar-upgrade-btn"
+                >
+                  Explore Plans
+                </button>
+              </div>
+            )}
+
+            {/* Subscriptions section */}
             <div className="sidebar__section">
               <p className="sidebar__section-title">
                 Subscriptions
@@ -176,15 +235,13 @@ export default function Sidebar() {
                 })}
               </ul>
             </div>
-          )}
-        </nav>
 
-        {/* Footer */}
-        {!collapsed && (
-          <div className="sidebar__footer">
-            <p>© 2026 VideoVerse</p>
-            <p>Core Browsing & Playback Engine</p>
-          </div>
+            {/* Footer */}
+            <div className="sidebar__footer">
+              <p>© 2026 VideoVerse</p>
+              <p>Stream · Share · Connect</p>
+            </div>
+          </nav>
         )}
       </aside>
     </>

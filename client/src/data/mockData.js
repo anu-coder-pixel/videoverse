@@ -2372,7 +2372,9 @@ export const SIDEBAR_SECTIONS = [
       { id: 'history', label: 'History', icon: 'History', path: '/history' },
       { id: 'watch-later', label: 'Watch Later', icon: 'Clock', path: '/watch-later' },
       { id: 'liked', label: 'Liked Videos', icon: 'ThumbsUp', path: '/liked' },
-      { id: 'downloads', label: 'Downloads', icon: 'Download', path: '/downloads', badge: 'Soon' },
+      { id: 'downloads', label: 'Downloads', icon: 'Download', path: '/downloads' },
+      { id: 'security', label: 'Security & Devices', icon: 'Shield', path: '/security' },
+      { id: 'upgrade', label: 'Upgrade Plan', icon: 'Sparkles', path: '/upgrade' },
     ],
   },
   {

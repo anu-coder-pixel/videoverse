@@ -7,13 +7,17 @@
   cursor: pointer;
   border-radius: var(--radius-lg);
   padding: var(--space-2);
-  transition: background var(--transition-fast), transform var(--transition-normal);
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-normal),
+    box-shadow var(--transition-normal);
   outline: none;
 }
 
 .video-card:hover {
   background: var(--color-bg-surface);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
 }
 
 .video-card:focus-visible {
@@ -24,7 +28,7 @@
 /* ── Thumbnail ── */
 .video-card__thumb-wrapper {
   position: relative;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   aspect-ratio: 16 / 9;
   background: var(--color-bg-elevated);
@@ -67,7 +71,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.22);
   opacity: 0;
   transition: opacity var(--transition-normal);
 }
@@ -133,7 +137,7 @@
 }
 
 .video-card__title {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
   line-height: 1.35;
   color: var(--color-text-primary);
@@ -162,13 +166,13 @@
   color: var(--color-text-muted);
 }
 
-/* ── Category tag ── */
+/* ── Category tag — shown as a bottom pill chip on hover ── */
 .video-card__category {
   position: absolute;
-  top: 14px;
+  bottom: 50px; /* sits just below the duration badge row */
   left: 14px;
-  background: rgba(0, 0, 0, 0.65);
-  color: rgba(255,255,255,0.85);
+  background: rgba(0, 0, 0, 0.72);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -178,6 +182,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--transition-fast);
+  backdrop-filter: blur(4px);
 }
 
 .video-card:hover .video-card__category {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   ThumbsUp, ThumbsDown, Share2, Download, Bell,
-  CheckCircle2, ArrowLeft, Flag, MoreHorizontal, Clock
+  CheckCircle2, ArrowLeft, Flag, MoreHorizontal, Clock, Loader2
 } from 'lucide-react';
 import VideoPlayer from '../../components/VideoPlayer/VideoPlayer';
 import CommentsSection from '../../components/CommentsSection/CommentsSection';
@@ -9,23 +9,6 @@ import VideoCard from '../../components/VideoCard/VideoCard';
 import { useApp } from '../../context/AppContext';
 import { MOCK_VIDEOS } from '../../data/mockData';
 import './WatchPage.css';
-
-/**
- * ⚠️  NOTICE — VideoVerse WatchPage Status:
- * ✅  Working: HTML5 video player with legitimate sample MP4 streaming
- * ✅  Working: Video selection & switching via Up Next recommendations
- * ✅  Working: Back to home navigation button
- * ✅  Working: Like / Dislike toggle (local state)
- * ✅  Working: Subscribe / Unsubscribe toggle (local state)
- * ✅  Working: Save to Watch Later (local state)
- * ✅  Working: Local comments submission
- * ❌  Task 1: Multilingual comments & moderation backend
- * ❌  Task 2: Controlled video downloads
- * ❌  Task 3: Subscriptions with Razorpay payments
- * ❌  Task 4: Authentication & user profiles
- * ❌  Task 5: Adaptive bitrate streaming (HLS/DASH) & CDN pipeline
- * ❌  Task 6: Real-time video calling
- */
 
 export default function WatchPage() {
   const {
@@ -41,6 +24,11 @@ export default function WatchPage() {
     watchLater,
     toggleWatchLater,
     showToast,
+    currentUser,
+    openAuthModal,
+    downloadVideo,
+    downloadingVideoId,
+    quotaInfo,
   } = useApp();
   const [descExpanded, setDescExpanded] = useState(false);
 
@@ -74,7 +62,12 @@ export default function WatchPage() {
   }
 
   function handleDownload() {
-    showToast('⚠️ Controlled video downloads will be built in internship Task 2.');
+    if (!currentUser) {
+      openAuthModal();
+      showToast('Please sign in to download videos.');
+      return;
+    }
+    downloadVideo(video);
   }
 
   return (
@@ -195,12 +188,17 @@ export default function WatchPage() {
                 <button
                   className="watch-meta__action-btn"
                   onClick={handleDownload}
-                  aria-label="Download video (planned feature)"
-                  title="Coming in Task 2"
+                  disabled={downloadingVideoId === video.id}
+                  aria-label={downloadingVideoId === video.id ? 'Downloading video file...' : 'Download video file'}
+                  title={quotaInfo ? `${quotaInfo.remaining} daily downloads remaining` : 'Download video'}
                   id="download-btn"
                 >
-                  <Download size={16} />
-                  <span>Download</span>
+                  {downloadingVideoId === video.id ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Download size={16} />
+                  )}
+                  <span>{downloadingVideoId === video.id ? 'Downloading…' : 'Download'}</span>
                 </button>
 
                 <button
