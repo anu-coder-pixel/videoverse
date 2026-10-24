@@ -26,9 +26,9 @@ export function useVideos() {
     setError(null);
 
     try {
-      // AbortController lets us cancel the fetch if it takes too long (3 seconds).
+      // AbortController lets us cancel the fetch if it takes too long (30 seconds for cloud cold starts).
       const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 3000);
+      const timeoutId  = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch('/api/videos', {
         signal: controller.signal,
@@ -86,7 +86,7 @@ export function useVideoById(id) {
 
       try {
         const controller = new AbortController();
-        const timeoutId  = setTimeout(() => controller.abort(), 3000);
+        const timeoutId  = setTimeout(() => controller.abort(), 30000);
 
         const response = await fetch(`/api/videos/${id}`, {
           signal: controller.signal,
