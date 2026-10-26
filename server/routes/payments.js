@@ -22,6 +22,7 @@ const Razorpay = require('razorpay');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const { requireAuth } = require('../middleware/auth');
+const { paymentOrderLimiter } = require('../middleware/rateLimiter');
 
 // ── Tier definitions (server-authoritative; client cannot override these) ──────
 const TIER_CONFIG = {
@@ -65,7 +66,7 @@ function getRazorpay() {
 //
 // Body: { tier: 'premium' | 'vip' }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/payments/create-order', requireAuth, async (req, res) => {
+router.post('/payments/create-order', requireAuth, paymentOrderLimiter, async (req, res) => {
   try {
     const { tier } = req.body;
 

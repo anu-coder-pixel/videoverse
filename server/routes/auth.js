@@ -20,6 +20,13 @@ const {
 const { parseClientContext } = require('../utils/deviceDetector');
 const { createOtpSession, hashOtp, getDevOtp } = require('../utils/otpService');
 const { resolveTheme } = require('../utils/istTime');
+const {
+  loginIpLimiter,
+  loginEmailLimiter,
+  registerLimiter,
+  otpVerifyLimiter,
+  otpResendLimiter,
+} = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -89,7 +96,7 @@ function mergeGuestDataIntoUser(user, guestData) {
  * Creates a new user account, starting strictly on the Free tier.
  * Registers and trusts the initial registration device.
  */
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   try {
     const { name, email, password, guestData } = req.body;
     const context = parseClientContext(req);
@@ -201,7 +208,7 @@ router.post('/register', async (req, res) => {
  * - If untrusted/new: gates login with step-up OTP and returns tempToken.
  * - Anti-enumeration: uniform error for non-existent email or wrong password.
  */
-router.post('/login', async (req, res) => {
+router.post('/login', loginIpLimiter, loginEmailLimiter, async (req, res) => {
   try {
     const { email, password, guestData } = req.body;
     const context = parseClientContext(req);
@@ -402,7 +409,7 @@ router.post('/login', async (req, res) => {
  * - Concurrent valid submissions cannot both succeed (atomic conditional transition).
  * - Safe error handling: never report success if trusted device / session cannot be persisted.
  */
-router.post('/verify-otp', requireTempAuth, async (req, res) => {
+router.post('/verify-otp', requireTempAuth, otpVerifyLimiter, async (req, res) => {
   try {
     const { otp, deviceName } = req.body;
     const { user, userId, sessionId } = req.tempAuth;
@@ -575,7 +582,7 @@ router.post('/verify-otp', requireTempAuth, async (req, res) => {
  * POST /api/auth/resend-otp
  * Generates and resends a fresh OTP adhering to server-enforced 60s cooldown.
  */
-router.post('/resend-otp', requireTempAuth, async (req, res) => {
+router.post('/resend-otp', requireTempAuth, otpResendLimiter, async (req, res) => {
   try {
     const { userId, user, rawToken } = req.tempAuth;
     const context = parseClientContext(req);
