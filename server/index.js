@@ -68,7 +68,7 @@ app.use(cors({
     if (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -140,10 +140,27 @@ app.get('/api/videos', async (req, res) => {
     // ── Build MongoDB filter object ─────────────────────────────────────────
     const filter = {};
 
-    // Category filter (case-insensitive, skip when "all" or absent)
+    // Category filter (case-insensitive allowlist, skip when "all" or absent)
     const category = req.query.category;
-    if (category && category.toLowerCase() !== 'all') {
-      filter.category = { $regex: new RegExp(`^${category}$`, 'i') };
+    if (category !== undefined) {
+      if (typeof category !== 'string') {
+        return res.status(400).json({ error: 'Invalid category' });
+      }
+      const trimmedCategory = category.trim();
+      if (trimmedCategory && trimmedCategory.toLowerCase() !== 'all') {
+        const matchedCategory = CATEGORIES.find(
+          c => c.toLowerCase() === trimmedCategory.toLowerCase()
+        );
+        if (!matchedCategory) {
+          return res.status(400).json({ error: 'Invalid category' });
+        }
+        if (matchedCategory.toLowerCase() === 'trending') {
+          // 'Trending' is a frontend sort/filter option, not a database category
+          req.query.sort = 'trending';
+        } else {
+          filter.category = { $regex: new RegExp(`^${matchedCategory}$`, 'i') };
+        }
+      }
     }
 
     // Full-text search across title, channel name, category, and tags
