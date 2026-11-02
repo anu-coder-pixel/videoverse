@@ -36,17 +36,62 @@ const BORDERLINE_PATTERNS = [
  * Detect primary language script from text
  */
 function detectLanguage(text) {
-  if (!text) return 'en';
+  if (!text || typeof text !== 'string') return 'en';
+  const clean = text.trim();
+  if (!clean) return 'en';
 
-  if (/[\u0900-\u097F]/.test(text)) return 'hi'; // Devanagari (Hindi, Marathi, Sanskrit)
-  if (/[\u0600-\u06FF]/.test(text)) return 'ar'; // Arabic / Urdu
-  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) return 'ja'; // Japanese Hiragana/Katakana
-  if (/[\uAC00-\uD7AF]/.test(text)) return 'ko'; // Korean Hangul
-  if (/[\u4E00-\u9FFF]/.test(text)) return 'zh'; // Chinese CJK
-  if (/[\u0400-\u04FF]/.test(text)) return 'ru'; // Cyrillic (Russian, etc.)
-  if (/[áéíóúñ¿¡]/i.test(text)) return 'es'; // Spanish
-  if (/[àâçéèêëîïôûùüÿœæ]/i.test(text)) return 'fr'; // French
-  if (/[äöüß]/i.test(text)) return 'de'; // German
+  // 1. Non-Latin scripts
+  if (/[\u0900-\u097F]/.test(clean)) return 'hi'; // Devanagari (Hindi, Marathi, Sanskrit)
+  if (/[\u0600-\u06FF]/.test(clean)) return 'ar'; // Arabic / Urdu
+  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(clean)) return 'ja'; // Japanese Hiragana/Katakana
+  if (/[\uAC00-\uD7AF]/.test(clean)) return 'ko'; // Korean Hangul
+  if (/[\u4E00-\u9FFF]/.test(clean)) return 'zh'; // Chinese CJK
+  if (/[\u0400-\u04FF]/.test(clean)) return 'ru'; // Cyrillic (Russian, etc.)
+
+  // 2. Diacritics
+  if (/[áéíóúñ¿¡]/i.test(clean)) return 'es'; // Spanish
+  if (/[àâçéèêëîïôûùüÿœæ]/i.test(clean)) return 'fr'; // French
+  if (/[äöüß]/i.test(clean)) return 'de'; // German
+
+  const lower = clean.toLowerCase();
+
+  // 3. Unaccented Spanish phrases / compounds
+  if (/\b(hola\s+amig[oa]s?|buenos\s+dias|buenas\s+tardes|buenas\s+noches|por\s+favor|muchas\s+gracias|muchos\s+gracias|de\s+nada|hasta\s+luego|como\s+estas|que\s+tal|muy\s+buen[oa]|muy\s+bien)\b/i.test(lower)) {
+    return 'es';
+  }
+
+  // 4. Unaccented French phrases / compounds
+  if (/\b(merci\s+beaucoup|s'?il\s+vous\s+pla[iî]t|de\s+rien|bonjour\s+[aà]\s+tous|bonne\s+journ[eé]e|c'?est\s+magnifique|tr[eè]s\s+bien|mon\s+ami)\b/i.test(lower)) {
+    return 'fr';
+  }
+
+  // 5. Unaccented German phrases / compounds
+  if (/\b(guten\s+tag|guten\s+morgen|guten\s+abend|vielen\s+dank|danke\s+sehr|danke\s+sch[oö]n|auf\s+wiedersehen|sehr\s+gut|alles\s+gut|wie\s+geht'?s)\b/i.test(lower)) {
+    return 'de';
+  }
+
+  // 6. Romanized Hindi / Hinglish phrases and compounds
+  const hinglishPhrases = /\b((bhut|bahut|bohot|bhot)\s+(badhiya|badiya|achha|accha|acha|mast|sahi|kamaal|khoob|pyara|sundar)|kya\s+(baat|haal|hal|scene|khoob)|kya\s+hi\s+(baat|video)|shukriya\s+(bhai|dost|yaar|sir|aapka|apka)?|dhanyawad\s+(bhai|dost|yaar)?|dhanyavaad|mast\s+(video|hai|bhai|content|laga)|ekdum\s+(mast|badhiya|badiya|sahi|jhakaas)|maza\s+aa\s+gaya|maje\s+aa\s+gaye|bhai\s+kya\s+video|apka\s+video|aapka\s+video|yeh?\s+video\s+(bohot|bahut|bhut|accha|achha|mast)|mujhe\s+(ye|yeh|bohot|bahut)|kya\s+video\s+hai)\b/i;
+  if (hinglishPhrases.test(lower)) {
+    return 'hi';
+  }
+
+  // 7. Unambiguous standalone Hindi words
+  const uniqueHindiWords = /\b(badhiya|badiya|shukriya|dhanyawad|dhanyavaad|zabardast|jhakaas|lajawab)\b/i;
+  if (uniqueHindiWords.test(lower)) {
+    return 'hi';
+  }
+
+  // 8. Multi-marker threshold: 2 or more distinct Hinglish markers to avoid false positives on English
+  const hinglishMarkers = ['bhut', 'bahut', 'bohot', 'bhot', 'achha', 'accha', 'acha', 'kya', 'haal', 'hal', 'hai', 'hain', 'bhai', 'yaar', 'nahi', 'nahin', 'mera', 'meri', 'aapka', 'apka', 'hum', 'mai', 'main', 'suno', 'dekho', 'karo', 'kare', 'raho', 'maza'];
+  let markerHits = 0;
+  for (const marker of hinglishMarkers) {
+    const reg = new RegExp('\\b' + marker + '\\b', 'i');
+    if (reg.test(lower)) {
+      markerHits++;
+      if (markerHits >= 2) return 'hi';
+    }
+  }
 
   return 'en'; // Standard Latin / English
 }

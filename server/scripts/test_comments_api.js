@@ -2,7 +2,7 @@
  * Automated Verification Script for Task 1: Comments, Moderation, Multilingual & Atomic Likes
  */
 
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 
 const BASE_URL = 'http://localhost:5000';
 
@@ -160,14 +160,43 @@ function cleanCookies(res) {
 
     // 7. Optional Translation Endpoint
     console.log('\n7. Testing Optional Translation Endpoint...');
+    // 7a. Unicode Devanagari translation
     const transRes = await fetch(`${BASE_URL}/api/comments/${hindiCommentId}/translate?target=en`);
-    assert(transRes.status === 200, 'Translation endpoint responded with HTTP 200');
+    assert(transRes.status === 200, 'Translation endpoint responded with HTTP 200 for Devanagari Hindi');
     const transData = await transRes.json();
     console.log(`     Translation result: translated=${transData.translated}, provider=${transData.provider || 'none'}, text="${transData.translatedText || transData.error || ''}"`);
     assert(typeof transData.translated === 'boolean', 'Translation status is a valid boolean');
     if (transData.translated) {
       assert(transData.translatedText !== hindiText, 'Translated text is not identical to original Hindi');
     }
+
+    // 7b. Hinglish / Romanized Hindi translation (e.g. "bhut badhiya")
+    const hinglishPostRes = await fetch(`${BASE_URL}/api/videos/vid-001/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie1,
+      },
+      body: JSON.stringify({ text: 'bhut badhiya' }),
+    });
+    assert(hinglishPostRes.status === 201, 'Hinglish comment posted with HTTP 201');
+    const hinglishPostData = await hinglishPostRes.json();
+    const hinglishCommentId = hinglishPostData.comment.id;
+
+    const hinglishTransRes = await fetch(`${BASE_URL}/api/comments/${hinglishCommentId}/translate?target=en`);
+    assert(hinglishTransRes.status === 200, 'Translation endpoint responded with HTTP 200 for Hinglish');
+    const hinglishTransData = await hinglishTransRes.json();
+    console.log(`     Hinglish translation: translated=${hinglishTransData.translated}, text="${hinglishTransData.translatedText || hinglishTransData.error || ''}"`);
+    assert(hinglishTransData.translated === true, 'Hinglish comment is successfully translated');
+    assert(hinglishTransData.translatedText === 'Very good', 'Hinglish "bhut badhiya" translates to "Very good"');
+
+    // 7c. Genuine English comment translation (should show already in English)
+    const engTransRes = await fetch(`${BASE_URL}/api/comments/${firstCommentId}/translate?target=en`);
+    assert(engTransRes.status === 200, 'Translation endpoint responded with HTTP 200 for English');
+    const engTransData = await engTransRes.json();
+    console.log(`     English check: alreadyTargetLanguage=${engTransData.alreadyTargetLanguage}, message="${engTransData.message || ''}"`);
+    assert(engTransData.alreadyTargetLanguage === true, 'English comment correctly recognized as already in English');
+    assert(engTransData.message === 'Comment is already in English.', 'English comment returns correct message');
 
     // 8. Concurrency-Safe Atomic Likes
     console.log('\n8. Testing Concurrency-Safe Atomic Comment Likes...');
@@ -213,7 +242,7 @@ function cleanCookies(res) {
     const Comment = require('../models/Comment');
     const User = require('../models/User');
     await mongoose.connect(process.env.MONGODB_URI);
-    await Comment.deleteMany({ _id: { $in: [firstCommentId, flaggedCommentId, hindiCommentId] } });
+    await Comment.deleteMany({ _id: { $in: [firstCommentId, flaggedCommentId, hindiCommentId, hinglishCommentId] } });
     await User.deleteMany({ email: { $in: [testEmail1, testEmail2] } });
     await mongoose.disconnect();
     console.log('     Test records safely cleaned up.');

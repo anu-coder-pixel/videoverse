@@ -265,14 +265,135 @@ router.put('/comments/:commentId/like', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to update like status' });
   }
 });
+// Scoped dictionary for high-frequency Hinglish and colloquial phrases
+const HINGLISH_DICTIONARY = {
+  'bahut badhiya': 'Very good',
+  'bahut accha': 'Very good',
+  'bahut accha video': 'Very good video',
+  'kya haal hai': 'How are you?',
+  'kya hal hai': 'How are you?',
+  'kya baat hai': 'Awesome!',
+  'shukriya bhai': 'Thank you brother',
+  'shukriya': 'Thank you',
+  'dhanyawad': 'Thank you',
+  'dhanyavaad': 'Thank you',
+  'mast video': 'Awesome video',
+  'mast hai': 'It is awesome',
+  'ekdum mast': 'Completely awesome',
+  'ekdum mast video': 'Completely awesome video',
+  'zabardast video': 'Fantastic video',
+  'shandar video': 'Splendid video',
+  'zabardast': 'Fantastic',
+  'shandar': 'Splendid',
+  'gazab': 'Incredible',
+  'lajawab': 'Unmatched',
+  'maza aa gaya': 'Enjoyed it thoroughly',
+  'bhai kya video hai': 'Brother, what an amazing video!',
+  'kya video hai bhai': 'Brother, what an amazing video!',
+  'kya video hai': 'What a video!',
+  'yeh video bahut accha hai': 'This video is very good',
+  'aapka video mast hai': 'Your video is awesome',
+  'mujhe yeh bahut pasand aaya': 'I really liked this',
+};
+
+// Common unaccented expressions fallback dictionary
+const COMMON_PHRASES_DICTIONARY = {
+  es: {
+    'hola amigo': 'Hello friend',
+    'hola amigos': 'Hello friends',
+    'buenos dias': 'Good morning',
+    'buenas tardes': 'Good afternoon',
+    'buenas noches': 'Good evening',
+    'muchas gracias': 'Thank you very much',
+    'muchos gracias': 'Thank you very much',
+    'de nada': "You're welcome",
+    'por favor': 'Please',
+  },
+  fr: {
+    'merci beaucoup': 'Thank you very much',
+    'merci': 'Thank you',
+    'bonjour a tous': 'Hello everyone',
+    'bonjour': 'Hello',
+    'de rien': "You're welcome",
+  },
+  de: {
+    'guten tag': 'Good day / Hello',
+    'guten morgen': 'Good morning',
+    'guten abend': 'Good evening',
+    'vielen dank': 'Thank you very much',
+    'danke sehr': 'Thank you very much',
+    'danke': 'Thank you',
+  },
+};
+
+// Hinglish normalization helper
+function normalizeHinglish(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b(bhut|bohot|bhot)\b/g, 'bahut')
+    .replace(/\b(badiya)\b/g, 'badhiya')
+    .replace(/\b(achha|acha)\b/g, 'accha')
+    .replace(/\b(ye)\b/g, 'yeh')
+    .replace(/\b(apka)\b/g, 'aapka');
+}
+
+// Hinglish to Devanagari transliteration helper for calling MyMemory
+const HINGLISH_TRANSLITERATION_MAP = {
+  bahut: 'बहुत',
+  bhut: 'बहुत',
+  bohot: 'बहुत',
+  bhot: 'बहुत',
+  badhiya: 'बढ़िया',
+  badiya: 'बढ़िया',
+  accha: 'अच्छा',
+  achha: 'अच्छा',
+  acha: 'अच्छा',
+  kya: 'क्या',
+  haal: 'हाल',
+  hal: 'हाल',
+  hai: 'है',
+  hain: 'हैं',
+  bhai: 'भाई',
+  shukriya: 'शुक्रिया',
+  dhanyawad: 'धन्यवाद',
+  dhanyavaad: 'धन्यवाद',
+  video: 'वीडियो',
+  aapka: 'आपका',
+  apka: 'आपका',
+  yeh: 'यह',
+  ye: 'यह',
+  woh: 'वह',
+  wo: 'वह',
+  zabardast: 'ज़बरदस्त',
+  shandar: 'शानदार',
+  dost: 'दोस्त',
+  yaar: 'यार',
+  pasand: 'पसंद',
+  aaya: 'आया',
+  kamaal: 'कमाल',
+  sahi: 'सही',
+  khoob: 'खूब',
+  mast: 'मस्त',
+};
+
+function transliterateHinglish(text) {
+  return text.replace(/\b([a-zA-Z]+)\b/g, (match, word) => {
+    return HINGLISH_TRANSLITERATION_MAP[word.toLowerCase()] || match;
+  });
+}
 
 /**
  * GET /api/comments/:commentId/translate
  *
  * Public access: Translate a comment into target language (default: 'en').
  * Graceful handling:
- *   - Detects source script/language
- *   - Checks if already in target language
+ *   - Re-evaluates source script/language dynamically on current text
+ *   - Checks if legitimately already in target language
+ *   - Uses curated dictionary for Hinglish & colloquial phrases
+ *   - Performs transliteration before remote translation when appropriate
  *   - Never returns fake or unchanged text as successful translation
  *   - Respects user privacy: only the single text string is sent over HTTPS to MyMemory
  */
@@ -291,9 +412,12 @@ router.get('/comments/:commentId/translate', async (req, res) => {
     }
 
     const sourceText = comment.text.trim();
-    const sourceLang = comment.language || detectLanguage(sourceText);
 
-    // If already in target language
+    // Re-evaluate language directly on sourceText to never blindly trust a stale stored value
+    const freshDetected = detectLanguage(sourceText);
+    const sourceLang = freshDetected !== 'en' ? freshDetected : (comment.language || 'en');
+
+    // If legitimately already in target language (genuine English comment targeting English)
     if (sourceLang === target) {
       return res.json({
         translated: false,
@@ -304,9 +428,48 @@ router.get('/comments/:commentId/translate', async (req, res) => {
       });
     }
 
+    // 1. Check scoped Hinglish dictionary if source is Hindi/Hinglish targeting English
+    if (sourceLang === 'hi' && target === 'en') {
+      const normHinglish = normalizeHinglish(sourceText);
+      const dictMatch = HINGLISH_DICTIONARY[normHinglish];
+      if (dictMatch) {
+        return res.json({
+          translated: true,
+          translatedText: dictMatch,
+          sourceLanguage: 'hi',
+          targetLanguage: 'en',
+          provider: 'VideoVerse Hinglish Dictionary',
+          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+          limitations: 'Curated colloquial translation dictionary.',
+        });
+      }
+    }
+
+    // 2. Check common European unaccented phrase fallbacks
+    if (COMMON_PHRASES_DICTIONARY[sourceLang] && target === 'en') {
+      const normPhrase = sourceText.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+      const phraseMatch = COMMON_PHRASES_DICTIONARY[sourceLang][normPhrase];
+      if (phraseMatch) {
+        return res.json({
+          translated: true,
+          translatedText: phraseMatch,
+          sourceLanguage: sourceLang,
+          targetLanguage: 'en',
+          provider: 'VideoVerse Phrase Dictionary',
+          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+          limitations: 'Curated colloquial translation dictionary.',
+        });
+      }
+    }
+
+    // 3. Determine query string for remote translation
+    // If source is Latin Hindi, transliterate recognized tokens to Devanagari so MyMemory can translate accurately
+    const isLatinHindi = sourceLang === 'hi' && !/[\u0900-\u097F]/.test(sourceText);
+    const queryText = isLatinHindi ? transliterateHinglish(sourceText) : sourceText;
+
     // Call external translation service with a strict timeout (4 seconds)
     try {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(sourceText)}&langpair=${sourceLang}|${target}`;
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${sourceLang}|${target}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
 
       if (!response.ok) {
@@ -331,7 +494,8 @@ router.get('/comments/:commentId/translate', async (req, res) => {
         rawTranslated &&
         typeof rawTranslated === 'string' &&
         rawTranslated.trim() &&
-        rawTranslated.trim().toLowerCase() !== sourceText.toLowerCase()
+        rawTranslated.trim().toLowerCase() !== sourceText.toLowerCase() &&
+        rawTranslated.trim().toLowerCase() !== queryText.toLowerCase()
       ) {
         return res.json({
           translated: true,
