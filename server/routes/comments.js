@@ -294,6 +294,19 @@ const HINGLISH_DICTIONARY = {
   'yeh video bahut accha hai': 'This video is very good',
   'aapka video mast hai': 'Your video is awesome',
   'mujhe yeh bahut pasand aaya': 'I really liked this',
+  // Devanagari Hindi phrases
+  'बहुत बढ़िया': 'Very good',
+  'बहुत अच्छा': 'Very good',
+  'बहुत अच्छा वीडियो': 'Very good video',
+  'नमस्ते': 'Hello',
+  'क्या हाल है': 'How are you?',
+  'शुक्रिया': 'Thank you',
+  'शुक्रिया भाई': 'Thank you brother',
+  'धन्यवाद': 'Thank you',
+  'मस्त वीडियो': 'Awesome video',
+  'कमाल का वीडियो': 'Wonderful video',
+  'ज़बरदस्त': 'Fantastic',
+  'शानदार': 'Splendid',
 };
 
 // Common unaccented expressions fallback dictionary
@@ -330,7 +343,7 @@ const COMMON_PHRASES_DICTIONARY = {
 function normalizeHinglish(text) {
   return text
     .toLowerCase()
-    .replace(/[^\w\s]/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b(bhut|bohot|bhot)\b/g, 'bahut')
