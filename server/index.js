@@ -14,6 +14,7 @@
 require('dotenv').config();
 
 const express      = require('express');
+const helmet       = require('helmet');
 const cors         = require('cors');
 const cookieParser = require('cookie-parser');
 const connectDB    = require('./config/db');   // MongoDB connection helper
@@ -37,6 +38,35 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
+
+// ── Helmet: HTTP security headers ────────────────────────────────────────────
+// Applied before CORS and all routes so every response is covered.
+//
+// contentSecurityPolicy is DISABLED intentionally:
+//   The React frontend loads video streams and thumbnails from multiple
+//   external CDNs (Unsplash, vjs.zencdn.net, MDN, W3Schools, Sintel, etc.).
+//   Helmet's default CSP blocks any source not explicitly allow-listed,
+//   which would immediately break all media playback and thumbnail display.
+//   CSP for this application must be defined at the Vercel (frontend) layer,
+//   not here on the API server.
+//
+// All other Helmet protections are left at their secure defaults:
+//   - X-Frame-Options: SAMEORIGIN
+//   - X-Content-Type-Options: nosniff
+//   - Strict-Transport-Security (HSTS): max-age=15552000; includeSubDomains
+//   - X-DNS-Prefetch-Control: off
+//   - X-Download-Options: noopen
+//   - X-Permitted-Cross-Domain-Policies: none
+//   - Referrer-Policy: no-referrer
+//   - Cross-Origin-Opener-Policy: same-origin
+//   - Cross-Origin-Resource-Policy: same-origin
+//   - Origin-Agent-Cluster: ?1
+//   - X-XSS-Protection: 0 (intentionally removed per modern best practices)
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  })
+);
 
 // Build list of allowed origins (always include local dev servers)
 const allowedOrigins = [
