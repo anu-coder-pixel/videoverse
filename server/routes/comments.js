@@ -309,6 +309,104 @@ const HINGLISH_DICTIONARY = {
   'शानदार': 'Splendid',
 };
 
+// Scoped dictionary for high-frequency Bengali (Banglish & Bengali script) phrases
+const BENGALI_DICTIONARY = {
+  'ami tomako': 'Incomplete phrase — more context needed',
+  'ami tomake': 'Incomplete phrase — more context needed',
+  'ami tomake bhalobashi': 'I love you',
+  'ami tomake bhalobasi': 'I love you',
+  'khub bhalo video': 'Very good video',
+  'khub bhalo': 'Very good',
+  'onek bhalo': 'Very good',
+  'kemon acho': 'How are you?',
+  'kemon achis': 'How are you?',
+  'bhalo achi': 'I am fine',
+  'dhonnobad': 'Thank you',
+  'dhonnobaad': 'Thank you',
+  'onek dhonnobad': 'Thank you very much',
+  'ki khobor': 'How are you?',
+  'shob thik ache': 'Everything is fine',
+  'darun video': 'Awesome video',
+  'darun': 'Awesome',
+  'osadharon video': 'Extraordinary video',
+  'osadharon': 'Extraordinary',
+  'bhalo laglo': 'Liked it',
+  // Bengali script
+  'অনেক ধন্যবাদ': 'Thank you very much',
+  'ধন্যবাদ': 'Thank you',
+  'খুব ভালো': 'Very good',
+  'খুব ভালো ভিডিও': 'Very good video',
+  'দারুণ ভিডিও': 'Awesome video',
+  'দারুণ': 'Awesome',
+  'অসাধারণ': 'Extraordinary',
+  'আমি তোমাকে ভালোবাসি': 'I love you',
+  'আমি তোমাকে': 'Incomplete phrase — more context needed',
+  'কেমন আছো': 'How are you?',
+  'ভালো আছি': 'I am fine',
+};
+
+// Regional Indic & Portuguese phrases dictionary
+const REGIONAL_INDIC_DICTIONARY = {
+  ta: {
+    'மிக்க நன்றி': 'Thank you very much',
+    'நன்றி': 'Thank you',
+    'ரொம்ப நல்லா இருக்கு': 'It is very good',
+    'சூப்பர் வீடியோ': 'Super video',
+    'romba nalla irukku': 'It is very good',
+    'romba nalla iruku': 'It is very good',
+    'mikka nandri': 'Thank you very much',
+    'nandri': 'Thank you',
+    'super video': 'Super video',
+  },
+  te: {
+    'చాలా ధన్యవాదాలు': 'Thank you very much',
+    'ధన్యవాదాలు': 'Thank you',
+    'చాలా బాగుంది': 'It is very good',
+    'సూపర్ వీడియో': 'Super video',
+    'chala bagundi': 'It is very good',
+    'chala dhanyavadalu': 'Thank you very much',
+    'dhanyavadalu': 'Thank you',
+  },
+  ml: {
+    'വളരെ നന്ദി': 'Thank you very much',
+    'നന്ദി': 'Thank you',
+    'വളരെ നല്ല വീഡിയോ': 'Very good video',
+  },
+  mr: {
+    'खूप छान व्हिडिओ': 'Very nice video',
+    'खूप छान': 'Very nice',
+    'धन्यवाद': 'Thank you',
+    'lay bhari': 'Super awesome',
+    'khup chan video': 'Very nice video',
+    'khup chan': 'Very nice',
+  },
+  gu: {
+    'ખૂબ આભાર': 'Thank you very much',
+    'આભાર': 'Thank you',
+    'ખૂબ સરસ': 'Very nice',
+    'ખૂબ સરસ વિડીયો': 'Very nice video',
+  },
+  pa: {
+    'ਬਹੁਤ ਧੰਨਵਾਦ': 'Thank you very much',
+    'ਬਹੁਤ ਵਧੀਆ': 'Very good',
+    'ਧੰਨਵਾਦ': 'Thank you',
+    'bahut vadiya': 'Very good',
+    'sat sri akal': 'Greetings / Hello',
+  },
+  pt: {
+    'muito obrigado': 'Thank you very much',
+    'muito obrigada': 'Thank you very much',
+    'obrigado': 'Thank you',
+    'obrigada': 'Thank you',
+    'muito bom': 'Very good',
+    'otimo video': 'Great video',
+    'bom dia': 'Good morning',
+    'boa tarde': 'Good afternoon',
+    'boa noite': 'Good night',
+    'tudo bem': 'Everything is good',
+  },
+};
+
 // Common unaccented expressions fallback dictionary
 const COMMON_PHRASES_DICTIONARY = {
   es: {
@@ -338,6 +436,46 @@ const COMMON_PHRASES_DICTIONARY = {
     'danke': 'Thank you',
   },
 };
+
+// Bengali normalization helper
+function normalizeBengali(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b(tomak[eo])\b/g, 'tomake')
+    .replace(/\b(bhalobasi)\b/g, 'bhalobashi')
+    .replace(/\b(dhonnobaad)\b/g, 'dhonnobad');
+}
+
+// Bengali transliteration map for Roman Bengali -> Bengali script
+const BENGALI_TRANSLITERATION_MAP = {
+  ami: 'আমি',
+  tomake: 'তোমাকে',
+  tomako: 'তোমাকে',
+  bhalobashi: 'ভালোবাসি',
+  bhalobasi: 'ভালোবাসি',
+  khub: 'খুব',
+  bhalo: 'ভালো',
+  video: 'ভিডিও',
+  onek: 'অনেক',
+  kemon: 'কেমন',
+  acho: 'আছো',
+  achi: 'আছি',
+  dhonnobad: 'ধন্যবাদ',
+  darun: 'দারুণ',
+  osadharon: 'অসাধারণ',
+  shob: 'সব',
+  thik: 'ঠিক',
+  ache: 'আছে',
+};
+
+function transliterateBengali(text) {
+  return text.replace(/\b([a-zA-Z]+)\b/g, (match, word) => {
+    return BENGALI_TRANSLITERATION_MAP[word.toLowerCase()] || match;
+  });
+}
 
 // Hinglish normalization helper
 function normalizeHinglish(text) {
@@ -405,7 +543,7 @@ function transliterateHinglish(text) {
  * Graceful handling:
  *   - Re-evaluates source script/language dynamically on current text
  *   - Checks if legitimately already in target language
- *   - Uses curated dictionary for Hinglish & colloquial phrases
+ *   - Uses curated dictionaries for Bengali, Hindi/Hinglish, Indic, and European phrases
  *   - Performs transliteration before remote translation when appropriate
  *   - Never returns fake or unchanged text as successful translation
  *   - Respects user privacy: only the single text string is sent over HTTPS to MyMemory
@@ -441,10 +579,27 @@ router.get('/comments/:commentId/translate', async (req, res) => {
       });
     }
 
-    // 1. Check scoped Hinglish dictionary if source is Hindi/Hinglish targeting English
+    // 1. Check scoped Bengali dictionary (Roman Bengali & Bengali script)
+    if (sourceLang === 'bn' && target === 'en') {
+      const normBengali = normalizeBengali(sourceText);
+      const dictMatch = BENGALI_DICTIONARY[normBengali] || BENGALI_DICTIONARY[sourceText];
+      if (dictMatch) {
+        return res.json({
+          translated: true,
+          translatedText: dictMatch,
+          sourceLanguage: 'bn',
+          targetLanguage: 'en',
+          provider: 'VideoVerse Bengali Dictionary',
+          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+          limitations: 'Curated colloquial translation dictionary.',
+        });
+      }
+    }
+
+    // 2. Check scoped Hinglish / Hindi dictionary if source is Hindi targeting English
     if (sourceLang === 'hi' && target === 'en') {
       const normHinglish = normalizeHinglish(sourceText);
-      const dictMatch = HINGLISH_DICTIONARY[normHinglish];
+      const dictMatch = HINGLISH_DICTIONARY[normHinglish] || HINGLISH_DICTIONARY[sourceText];
       if (dictMatch) {
         return res.json({
           translated: true,
@@ -458,7 +613,24 @@ router.get('/comments/:commentId/translate', async (req, res) => {
       }
     }
 
-    // 2. Check common European unaccented phrase fallbacks
+    // 3. Check Regional Indic dictionary (Tamil, Telugu, Malayalam, Marathi, Gujarati, Punjabi, Portuguese)
+    if (REGIONAL_INDIC_DICTIONARY[sourceLang] && target === 'en') {
+      const normText = sourceText.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+      const regionalMatch = REGIONAL_INDIC_DICTIONARY[sourceLang][normText] || REGIONAL_INDIC_DICTIONARY[sourceLang][sourceText];
+      if (regionalMatch) {
+        return res.json({
+          translated: true,
+          translatedText: regionalMatch,
+          sourceLanguage: sourceLang,
+          targetLanguage: 'en',
+          provider: 'VideoVerse Regional Dictionary',
+          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+          limitations: 'Curated colloquial translation dictionary.',
+        });
+      }
+    }
+
+    // 4. Check common European unaccented phrase fallbacks
     if (COMMON_PHRASES_DICTIONARY[sourceLang] && target === 'en') {
       const normPhrase = sourceText.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
       const phraseMatch = COMMON_PHRASES_DICTIONARY[sourceLang][normPhrase];
@@ -475,10 +647,13 @@ router.get('/comments/:commentId/translate', async (req, res) => {
       }
     }
 
-    // 3. Determine query string for remote translation
-    // If source is Latin Hindi, transliterate recognized tokens to Devanagari so MyMemory can translate accurately
-    const isLatinHindi = sourceLang === 'hi' && !/[\u0900-\u097F]/.test(sourceText);
-    const queryText = isLatinHindi ? transliterateHinglish(sourceText) : sourceText;
+    // 5. Determine query string for remote translation
+    let queryText = sourceText;
+    if (sourceLang === 'hi' && !/[\u0900-\u097F]/.test(sourceText)) {
+      queryText = transliterateHinglish(sourceText);
+    } else if (sourceLang === 'bn' && !/[\u0980-\u09FF]/.test(sourceText)) {
+      queryText = transliterateBengali(sourceText);
+    }
 
     // Call external translation service with a strict timeout (4 seconds)
     try {

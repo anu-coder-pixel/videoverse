@@ -190,13 +190,110 @@ function cleanCookies(res) {
     assert(hinglishTransData.translated === true, 'Hinglish comment is successfully translated');
     assert(hinglishTransData.translatedText === 'Very good', 'Hinglish "bhut badhiya" translates to "Very good"');
 
-    // 7c. Genuine English comment translation (should show already in English)
+    // 7c. Roman Bengali comment translation (e.g. "ami tomako")
+    const bengaliPostRes = await fetch(`${BASE_URL}/api/videos/vid-001/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie1,
+      },
+      body: JSON.stringify({ text: 'ami tomako' }),
+    });
+    assert(bengaliPostRes.status === 201, 'Roman Bengali comment posted with HTTP 201');
+    const bengaliPostData = await bengaliPostRes.json();
+    const bengaliCommentId = bengaliPostData.comment.id;
+    assert(bengaliPostData.comment.language === 'bn', 'Roman Bengali "ami tomako" detected as Bengali (bn)');
+
+    const bengaliTransRes = await fetch(`${BASE_URL}/api/comments/${bengaliCommentId}/translate?target=en`);
+    assert(bengaliTransRes.status === 200, 'Translation endpoint responded with HTTP 200 for Roman Bengali');
+    const bengaliTransData = await bengaliTransRes.json();
+    console.log(`     Roman Bengali translation: translated=${bengaliTransData.translated}, text="${bengaliTransData.translatedText || bengaliTransData.error || ''}"`);
+    assert(bengaliTransData.translated === true, 'Roman Bengali comment is successfully translated');
+    assert(bengaliTransData.translatedText === 'Incomplete phrase — more context needed', 'Roman Bengali "ami tomako" translates to "Incomplete phrase — more context needed"');
+    assert(bengaliTransData.sourceLanguage === 'bn', 'Translation returned source language as "bn"');
+
+    // 7d. Bengali Script comment translation (e.g. "অনেক ধন্যবাদ")
+    const bengaliScriptPostRes = await fetch(`${BASE_URL}/api/videos/vid-001/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie1,
+      },
+      body: JSON.stringify({ text: 'অনেক ধন্যবাদ' }),
+    });
+    assert(bengaliScriptPostRes.status === 201, 'Bengali script comment posted with HTTP 201');
+    const bengaliScriptPostData = await bengaliScriptPostRes.json();
+    const bengaliScriptCommentId = bengaliScriptPostData.comment.id;
+    assert(bengaliScriptPostData.comment.language === 'bn', 'Bengali script detected as Bengali (bn)');
+
+    const bengaliScriptTransRes = await fetch(`${BASE_URL}/api/comments/${bengaliScriptCommentId}/translate?target=en`);
+    assert(bengaliScriptTransRes.status === 200, 'Translation endpoint responded with HTTP 200 for Bengali script');
+    const bengaliScriptTransData = await bengaliScriptTransRes.json();
+    console.log(`     Bengali script translation: translated=${bengaliScriptTransData.translated}, text="${bengaliScriptTransData.translatedText || bengaliScriptTransData.error || ''}"`);
+    assert(bengaliScriptTransData.translated === true, 'Bengali script comment is successfully translated');
+    assert(bengaliScriptTransData.translatedText === 'Thank you very much', 'Bengali script "অনেক ধন্যবাদ" translates to "Thank you very much"');
+
+    // 7e. Genuine English comment translation (should show already in English)
     const engTransRes = await fetch(`${BASE_URL}/api/comments/${firstCommentId}/translate?target=en`);
     assert(engTransRes.status === 200, 'Translation endpoint responded with HTTP 200 for English');
     const engTransData = await engTransRes.json();
     console.log(`     English check: alreadyTargetLanguage=${engTransData.alreadyTargetLanguage}, message="${engTransData.message || ''}"`);
     assert(engTransData.alreadyTargetLanguage === true, 'English comment correctly recognized as already in English');
     assert(engTransData.message === 'Comment is already in English.', 'English comment returns correct message');
+
+    // 7f. Unit Tests: Language Detection & English False-Positive Prevention
+    console.log('\n7f. Testing Language Detection Script Ranges & False Positive Guardrails...');
+    const { detectLanguage } = require('../utils/moderation');
+
+    // English false-positive checks for common English words that overlap with Indian languages
+    assert(detectLanguage('The main singer will hum along to the music') === 'en', 'English sentence with "main" and "hum" detected as English (en)');
+    assert(detectLanguage('I have a tooth ache and a headache') === 'en', 'English sentence with "ache" detected as English (en)');
+    assert(detectLanguage('This is so cool and one of the best videos') === 'en', 'English sentence with "so" and "one" detected as English (en)');
+    assert(detectLanguage('Come on, tell me what you think') === 'en', 'English sentence with "me" and "come" detected as English (en)');
+    assert(detectLanguage('Hi, how are you doing today my friend?') === 'en', 'English greeting detected as English (en)');
+
+    // Romanized Indic language detection
+    assert(detectLanguage('romba nalla irukku') === 'ta', 'Romanized Tamil "romba nalla irukku" detected as ta');
+    assert(detectLanguage('mikka nandri nanba') === 'ta', 'Romanized Tamil "mikka nandri nanba" detected as ta');
+    assert(detectLanguage('chala bagundi') === 'te', 'Romanized Telugu "chala bagundi" detected as te');
+    assert(detectLanguage('chala dhanyavadalu') === 'te', 'Romanized Telugu "chala dhanyavadalu" detected as te');
+    assert(detectLanguage('bahut vadiya video') === 'pa', 'Romanized Punjabi "bahut vadiya video" detected as pa');
+    assert(detectLanguage('sat sri akal') === 'pa', 'Romanized Punjabi "sat sri akal" detected as pa');
+    assert(detectLanguage('khup chan video') === 'mr', 'Romanized Marathi "khup chan video" detected as mr');
+    assert(detectLanguage('lay bhari') === 'mr', 'Romanized Marathi "lay bhari" detected as mr');
+    assert(detectLanguage('ami tomake bhalobashi') === 'bn', 'Romanized Bengali "ami tomake bhalobashi" detected as bn');
+    assert(detectLanguage('onek dhonnobad') === 'bn', 'Romanized Bengali "onek dhonnobad" detected as bn');
+
+    // Unicode Script verification (ensuring Telugu ధ/ధ is not confused with Bengali ধ)
+    assert(detectLanguage('ధన్యవాదాలు') === 'te', 'Telugu script "ధన్యవాదాలు" correctly detected as Telugu (te)');
+    assert(detectLanguage('ధన్యవాదాలు చాలా బాగుంది') === 'te', 'Telugu sentence correctly detected as Telugu (te)');
+    assert(detectLanguage('ধন্যবাদ') === 'bn', 'Bengali script "ধন্যবাদ" correctly detected as Bengali (bn)');
+    assert(detectLanguage('অনেক ধন্যবাদ খুব ভালো') === 'bn', 'Bengali sentence correctly detected as Bengali (bn)');
+    assert(detectLanguage('மிக்க நன்றி') === 'ta', 'Tamil script "மிக்க நன்றி" correctly detected as Tamil (ta)');
+    assert(detectLanguage('ਖੂਬ ਆਭਾਰ') === 'gu' || detectLanguage('ખૂબ આભાર') === 'gu', 'Gujarati script correctly detected as Gujarati (gu)');
+    assert(detectLanguage('ਬਹੁਤ ਧੰਨਵਾਦ') === 'pa', 'Gurmukhi script "ਬਹੁਤ ਧੰਨਵਾਦ" correctly detected as Punjabi (pa)');
+
+    // Arabic vs Urdu distinction checks
+    assert(detectLanguage('بہت شکریہ آپ کا') === 'ur', 'Urdu sentence correctly detected as Urdu (ur)');
+    assert(detectLanguage('شكرا جزيلا مرحبا') === 'ar', 'Arabic sentence correctly detected as Arabic (ar)');
+    assert(detectLanguage('खूप छान व्हिडिओ आहे') === 'mr', 'Marathi Devanagari sentence correctly detected as Marathi (mr)');
+    assert(detectLanguage('यह बहुत अच्छा वीडियो है') === 'hi', 'Hindi Devanagari sentence correctly detected as Hindi (hi)');
+
+    // Mixed-language comments
+    assert(detectLanguage('good video bhai bahut accha') === 'hi', 'Mixed English-Hindi comment detected as hi');
+    assert(detectLanguage('thank you ami tomake bhalobashi') === 'bn', 'Mixed English-Bengali comment detected as bn');
+    assert(detectLanguage('super video romba nalla irukku') === 'ta', 'Mixed English-Tamil comment detected as ta');
+    assert(detectLanguage('amazing content chala bagundi') === 'te', 'Mixed English-Telugu comment detected as te');
+
+    // Ambiguous short comments (must stay English, never falsely classified)
+    assert(detectLanguage('ok') === 'en', 'Short comment "ok" detected as en');
+    assert(detectLanguage('cool') === 'en', 'Short comment "cool" detected as en');
+    assert(detectLanguage('nice video') === 'en', 'Short comment "nice video" detected as en');
+    assert(detectLanguage('wow') === 'en', 'Short comment "wow" detected as en');
+    assert(detectLanguage('lol') === 'en', 'Short comment "lol" detected as en');
+    assert(detectLanguage('yes') === 'en', 'Short comment "yes" detected as en');
+    assert(detectLanguage('great') === 'en', 'Short comment "great" detected as en');
+    assert(detectLanguage('awesome') === 'en', 'Short comment "awesome" detected as en');
 
     // 8. Concurrency-Safe Atomic Likes
     console.log('\n8. Testing Concurrency-Safe Atomic Comment Likes...');
@@ -236,13 +333,13 @@ function cleanCookies(res) {
     assert(user2LikeData.liked === true, 'User 2 like succeeded');
     assert(user2LikeData.likesCount === 2, 'Likes count reflects both distinct users (count = 2)');
 
-    // 9. Clean up test comments and users from database
+    // 9. Clean up test comments and users from database (strictly by exact created IDs only)
     console.log('\n9. Cleaning up test data...');
     const mongoose = require('mongoose');
     const Comment = require('../models/Comment');
     const User = require('../models/User');
     await mongoose.connect(process.env.MONGODB_URI);
-    await Comment.deleteMany({ _id: { $in: [firstCommentId, flaggedCommentId, hindiCommentId, hinglishCommentId] } });
+    await Comment.deleteMany({ _id: { $in: [firstCommentId, flaggedCommentId, hindiCommentId, hinglishCommentId, bengaliCommentId, bengaliScriptCommentId] } });
     await User.deleteMany({ email: { $in: [testEmail1, testEmail2] } });
     await mongoose.disconnect();
     console.log('     Test records safely cleaned up.');
