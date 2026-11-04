@@ -30,10 +30,9 @@ export const STORAGE_KEYS = {
  */
 export function calculateIstTheme() {
   const now = new Date();
-  const utcMillis = now.getTime() + now.getTimezoneOffset() * 60000;
-  const istMillis = utcMillis + 5.5 * 3600000;
+  const istMillis = now.getTime() + (5.5 * 60 * 60 * 1000);
   const istDate = new Date(istMillis);
-  const minutes = istDate.getHours() * 60 + istDate.getMinutes();
+  const minutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
   return (minutes >= 300 && minutes < 720) ? 'light' : 'dark';
 }
 

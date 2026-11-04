@@ -119,11 +119,12 @@ export default function SecurityPage() {
     return <Laptop size={20} />;
   }
 
-  // Format date helper
+  // Format date helper with robust fallback
   function formatDate(isoString) {
-    if (!isoString) return 'Unknown';
+    if (!isoString) return 'Recently';
     try {
       const d = new Date(isoString);
+      if (isNaN(d.getTime())) return 'Recently';
       return d.toLocaleDateString(undefined, {
         month: 'short',
         day: 'numeric',
@@ -132,8 +133,16 @@ export default function SecurityPage() {
         minute: '2-digit',
       });
     } catch {
-      return isoString;
+      return 'Recently';
     }
+  }
+
+  // Calculate remaining device-trust days safely
+  function getDaysUntilExpiration(expiresAt) {
+    if (!expiresAt) return null;
+    const ms = new Date(expiresAt).getTime() - Date.now();
+    if (isNaN(ms)) return null;
+    return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
   }
 
   if (!currentUser) {
@@ -306,8 +315,14 @@ export default function SecurityPage() {
                           {device.lastLocation.display}
                         </span>
                       )}
-                      <span>Expires in {device.daysUntilExpiration} days</span>
-                      <span>Added: {formatDate(device.createdAt)}</span>
+                      {(() => {
+                        const days = getDaysUntilExpiration(device.expiresAt);
+                        if (days === null) return <span>Active session</span>;
+                        if (days === 0) return <span>Expires today</span>;
+                        if (days === 1) return <span>Expires in 1 day</span>;
+                        return <span>Expires in {days} days</span>;
+                      })()}
+                      <span>Added: {formatDate(device.firstTrustedAt || device.createdAt)}</span>
                     </div>
                   </div>
                 </div>

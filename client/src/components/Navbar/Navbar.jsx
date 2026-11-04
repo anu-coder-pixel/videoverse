@@ -275,19 +275,51 @@ export default function Navbar() {
                       <div className="navbar__dropdown-meta">
                         <p className="navbar__dropdown-name truncate">{currentUser.name}</p>
                         <p className="navbar__dropdown-email truncate">{currentUser.email}</p>
-                        {currentUser.subscriptionTier === 'vip' ? (
-                          <span className="navbar__tier-badge navbar__tier-badge--vip">
-                            <Crown size={11} /> VIP
-                          </span>
-                        ) : currentUser.subscriptionTier === 'premium' ? (
-                          <span className="navbar__tier-badge navbar__tier-badge--premium">
-                            <Star size={11} /> Premium
-                          </span>
-                        ) : (
-                          <span className="navbar__tier-badge navbar__tier-badge--free">
-                            Free Member
-                          </span>
-                        )}
+                        {(() => {
+                          const rawTier = (currentUser.subscriptionTier || 'free').toLowerCase();
+                          const normTier = (currentUser.normalizedSubscriptionTier || rawTier).toLowerCase();
+
+                          if (rawTier === 'vip') {
+                            return (
+                              <span className="navbar__tier-badge navbar__tier-badge--vip">
+                                <Crown size={11} /> VIP
+                              </span>
+                            );
+                          }
+                          if (rawTier === 'premium') {
+                            return (
+                              <span className="navbar__tier-badge navbar__tier-badge--premium">
+                                <Star size={11} /> Premium
+                              </span>
+                            );
+                          }
+                          if (normTier === 'gold') {
+                            return (
+                              <span className="navbar__tier-badge navbar__tier-badge--vip" style={{ color: '#fbbf24', borderColor: 'rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.15)' }}>
+                                <Crown size={11} /> Gold Member
+                              </span>
+                            );
+                          }
+                          if (normTier === 'silver') {
+                            return (
+                              <span className="navbar__tier-badge navbar__tier-badge--premium" style={{ color: '#e2e8f0', borderColor: 'rgba(226, 232, 240, 0.35)', background: 'rgba(226, 232, 240, 0.15)' }}>
+                                <Star size={11} /> Silver Member
+                              </span>
+                            );
+                          }
+                          if (normTier === 'bronze') {
+                            return (
+                              <span className="navbar__tier-badge navbar__tier-badge--premium" style={{ color: '#e09858', borderColor: 'rgba(205, 127, 50, 0.35)', background: 'rgba(205, 127, 50, 0.15)' }}>
+                                <Zap size={11} /> Bronze Member
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="navbar__tier-badge navbar__tier-badge--free">
+                              Free Member
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 

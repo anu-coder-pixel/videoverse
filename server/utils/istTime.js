@@ -15,13 +15,12 @@
  */
 function getIstTime(date = new Date()) {
   const d = date instanceof Date ? date : new Date(date);
-  // IST is exactly UTC + 5 hours 30 minutes
-  const utcMillis = d.getTime() + d.getTimezoneOffset() * 60000;
-  const istMillis = utcMillis + (5.5 * 3600000);
+  // IST is exactly UTC + 5 hours 30 minutes (19,800,000 ms)
+  const istMillis = d.getTime() + (5.5 * 60 * 60 * 1000);
   const istDate = new Date(istMillis);
 
-  const hour = istDate.getHours();
-  const minute = istDate.getMinutes();
+  const hour = istDate.getUTCHours();
+  const minute = istDate.getUTCMinutes();
   const totalMinutes = hour * 60 + minute;
 
   return { hour, minute, totalMinutes, istDate };
