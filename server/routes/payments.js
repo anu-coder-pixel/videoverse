@@ -25,17 +25,53 @@ const { requireAuth } = require('../middleware/auth');
 const { paymentOrderLimiter } = require('../middleware/rateLimiter');
 
 // ── Tier definitions (server-authoritative; client cannot override these) ──────
+const PLAN_CONFIG = {
+  bronze: {
+    label: 'Bronze',
+    cycles: {
+      monthly: { amount: 9900, durationDays: 30, label: 'Monthly' },
+      quarterly: { amount: 24900, durationDays: 90, label: 'Quarterly' },
+      yearly: { amount: 89900, durationDays: 365, label: 'Yearly' },
+    },
+  },
+  silver: {
+    label: 'Silver',
+    cycles: {
+      monthly: { amount: 19900, durationDays: 30, label: 'Monthly' },
+      quarterly: { amount: 49900, durationDays: 90, label: 'Quarterly' },
+      yearly: { amount: 179900, durationDays: 365, label: 'Yearly' },
+    },
+  },
+  gold: {
+    label: 'Gold',
+    cycles: {
+      monthly: { amount: 49900, durationDays: 30, label: 'Monthly' },
+      quarterly: { amount: 129900, durationDays: 90, label: 'Quarterly' },
+      yearly: { amount: 449900, durationDays: 365, label: 'Yearly' },
+    },
+  },
+};
+
+/**
+ * Helper: Normalizes tier string to bronze, silver, or gold,
+ * mapping legacy aliases ('vip' -> 'gold', 'premium' -> 'silver')
+ */
+function normalizeTier(tier) {
+  if (!tier) return null;
+  const t = String(tier).toLowerCase().trim();
+  if (t === 'gold' || t === 'vip') return 'gold';
+  if (t === 'silver' || t === 'premium') return 'silver';
+  if (t === 'bronze') return 'bronze';
+  return null;
+}
+
+// Legacy TIER_CONFIG for backward compatibility with existing tests
 const TIER_CONFIG = {
-  premium: {
-    label: 'Premium',
-    amount: 19900, // ₹199 in paise
-    currency: 'INR',
-  },
-  vip: {
-    label: 'VIP',
-    amount: 49900, // ₹499 in paise
-    currency: 'INR',
-  },
+  bronze: { label: 'Bronze', amount: 9900, currency: 'INR' },
+  silver: { label: 'Silver', amount: 19900, currency: 'INR' },
+  gold: { label: 'Gold', amount: 49900, currency: 'INR' },
+  premium: { label: 'Silver', amount: 19900, currency: 'INR' },
+  vip: { label: 'Gold', amount: 49900, currency: 'INR' },
 };
 
 // ── Razorpay client (lazy-initialized) ────────────────────────────────────────
@@ -64,37 +100,34 @@ function getRazorpay() {
 // Creates a Razorpay order on the server and returns the orderId + amount
 // to the client so it can open the checkout modal.
 //
-// Body: { tier: 'premium' | 'vip' }
+// Body: { tier: 'bronze'|'silver'|'gold'|'premium'|'vip', billingCycle?: 'monthly'|'quarterly'|'yearly' }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/payments/create-order', requireAuth, paymentOrderLimiter, async (req, res) => {
   try {
-    const { tier } = req.body;
+    const { tier, billingCycle } = req.body;
 
     // 1. Validate tier
-    if (!tier || !TIER_CONFIG[tier]) {
+    const normTier = normalizeTier(tier);
+    if (!normTier || !PLAN_CONFIG[normTier]) {
       return res.status(400).json({
-        error: 'Invalid tier. Must be "premium" or "vip".',
+        error: 'Invalid tier. Must be "bronze", "silver", or "gold".',
         code: 'INVALID_TIER',
       });
     }
 
-    // 2. Prevent downgrade or re-purchase of current tier
-    const currentTier = req.user.subscriptionTier;
-    if (currentTier === 'vip') {
+    // 2. Validate billing cycle
+    const cycle = (billingCycle || 'monthly').toLowerCase().trim();
+    if (!['monthly', 'quarterly', 'yearly'].includes(cycle)) {
       return res.status(400).json({
-        error: 'You already have the highest VIP subscription.',
-        code: 'ALREADY_VIP',
-      });
-    }
-    if (currentTier === tier) {
-      return res.status(400).json({
-        error: `You are already on the ${TIER_CONFIG[tier].label} plan.`,
-        code: 'ALREADY_ON_TIER',
+        error: 'Invalid billing cycle. Must be "monthly", "quarterly", or "yearly".',
+        code: 'INVALID_CYCLE',
       });
     }
 
-    // 3. Server-side amount from tier config — client never sends amount
-    const { amount, currency } = TIER_CONFIG[tier];
+    // 3. Server-side amount and duration from plan config (client never dictates amount)
+    const cycleConfig = PLAN_CONFIG[normTier].cycles[cycle];
+    const { amount, durationDays } = cycleConfig;
+    const currency = 'INR';
 
     // 4. Create Razorpay order
     let razorpayOrder;
@@ -105,7 +138,9 @@ router.post('/payments/create-order', requireAuth, paymentOrderLimiter, async (r
         receipt: `vv-${req.user._id.toString().slice(-8)}-${Date.now()}`,
         notes: {
           userId: req.user._id.toString(),
-          tier,
+          tier: normTier,
+          billingCycle: cycle,
+          durationDays: String(durationDays),
           platform: 'VideoVerse',
         },
       });
@@ -118,22 +153,28 @@ router.post('/payments/create-order', requireAuth, paymentOrderLimiter, async (r
     }
 
     // 5. Save payment record (status: 'created')
+    const invoiceNumber = `INV-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     await Payment.create({
       userId: req.user._id,
       razorpayOrderId: razorpayOrder.id,
-      tier,
+      tier: normTier,
+      billingCycle: cycle,
+      durationDays,
+      invoiceNumber,
       amount,
       currency,
       status: 'created',
     });
 
-    // 6. Return only the fields the client needs; never expose KEY_SECRET
+    // 6. Return only safe fields the client needs; never expose KEY_SECRET
     return res.status(201).json({
       success: true,
       orderId: razorpayOrder.id,
       amount,
       currency,
-      tier,
+      tier: normTier,
+      billingCycle: cycle,
+      invoiceNumber,
       keyId: process.env.RAZORPAY_KEY_ID, // Safe to expose (public key)
     });
   } catch (err) {
@@ -146,7 +187,8 @@ router.post('/payments/create-order', requireAuth, paymentOrderLimiter, async (r
 // POST /api/payments/verify
 //
 // Verifies the Razorpay payment signature server-side, then upgrades the user's
-// subscription tier. Idempotent — already-paid orders return success cleanly.
+// subscription tier with calculated expiry. Idempotent — already-paid orders
+// return success cleanly.
 //
 // Body: { razorpayOrderId, razorpayPaymentId, razorpaySignature }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,13 +221,21 @@ router.post('/payments/verify', requireAuth, async (req, res) => {
       });
     }
 
-    // 4. Idempotency guard — if already verified and paid, return success
+    // 4. Idempotency guard — if already verified and paid, return success cleanly
     if (payment.status === 'paid') {
       const user = await User.findById(req.user._id);
       return res.json({
         success: true,
         message: 'Payment already verified. Your tier is active.',
         user: user.toSafeObject(),
+        payment: {
+          orderId: payment.razorpayOrderId,
+          paymentId: payment.razorpayPaymentId,
+          invoiceNumber: payment.invoiceNumber,
+          tier: normalizeTier(payment.tier) || payment.tier,
+          billingCycle: payment.billingCycle,
+          amount: payment.amount,
+        },
       });
     }
 
@@ -205,10 +255,12 @@ router.post('/payments/verify', requireAuth, async (req, res) => {
       .update(`${razorpayOrderId}|${razorpayPaymentId}`)
       .digest('hex');
 
-    const isSignatureValid = crypto.timingSafeEqual(
-      Buffer.from(expectedSignature, 'hex'),
-      Buffer.from(razorpaySignature, 'hex')
-    );
+    const expectedBuf = Buffer.from(expectedSignature, 'hex');
+    const providedBuf = Buffer.from(razorpaySignature, 'hex');
+
+    const isSignatureValid =
+      expectedBuf.length === providedBuf.length &&
+      crypto.timingSafeEqual(expectedBuf, providedBuf);
 
     if (!isSignatureValid) {
       // Mark the payment record as failed
@@ -221,25 +273,58 @@ router.post('/payments/verify', requireAuth, async (req, res) => {
       });
     }
 
-    // 6. Upgrade the user's tier
+    // 6. Upgrade the user's tier and calculate subscription expiry
     const user = await User.findById(req.user._id);
+    const normTier = normalizeTier(payment.tier) || payment.tier;
+    const cycle = payment.billingCycle || 'monthly';
+    const durationDays = payment.durationDays || (cycle === 'yearly' ? 365 : cycle === 'quarterly' ? 90 : 30);
+
+    const now = Date.now();
+    let baseTime = now;
+    // If user already has an active subscription of the same tier, extend from existing expiry date
+    if (
+      user.subscriptionExpiresAt &&
+      new Date(user.subscriptionExpiresAt).getTime() > now &&
+      user.getEffectiveTier() === normTier
+    ) {
+      baseTime = new Date(user.subscriptionExpiresAt).getTime();
+    }
+
+    const expiresAt = new Date(baseTime + durationDays * 24 * 60 * 60 * 1000);
+
     user.subscriptionTier = payment.tier;
+    user.subscriptionExpiresAt = expiresAt;
+    user.subscriptionBillingCycle = cycle;
+    user.subscriptionCancelledAt = null;
     await user.save();
 
     // 7. Record verified payment details
     payment.status = 'paid';
     payment.razorpayPaymentId = razorpayPaymentId;
     payment.razorpaySignature = razorpaySignature;
+    if (!payment.invoiceNumber) {
+      payment.invoiceNumber = `INV-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
     await payment.save();
 
+    const tierLabel = PLAN_CONFIG[normTier]?.label || TIER_CONFIG[normTier]?.label || normTier;
     console.log(
-      `[Payment] User ${user._id} upgraded to "${payment.tier}" via order ${razorpayOrderId}`
+      `[Payment] User ${user._id} upgraded to "${normTier}" (${cycle}) via order ${razorpayOrderId}, expires ${expiresAt.toISOString()}`
     );
 
     return res.json({
       success: true,
-      message: `You are now a ${TIER_CONFIG[payment.tier].label} member!`,
+      message: `You are now a ${tierLabel} member!`,
       user: user.toSafeObject(),
+      payment: {
+        orderId: payment.razorpayOrderId,
+        paymentId: payment.razorpayPaymentId,
+        invoiceNumber: payment.invoiceNumber,
+        tier: normTier,
+        billingCycle: cycle,
+        expiresAt,
+        amount: payment.amount,
+      },
     });
   } catch (err) {
     // Handle crypto.timingSafeEqual length mismatch (invalid hex signature)
@@ -251,6 +336,54 @@ router.post('/payments/verify', requireAuth, async (req, res) => {
     }
     console.error('[Verify Payment Error]', err.message);
     return res.status(500).json({ error: 'Failed to verify payment.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/payments/cancel
+//
+// Cancels recurring renewal for the authenticated user's active paid subscription.
+// Paid benefits remain active until user.subscriptionExpiresAt.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/payments/cancel', requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const effectiveTier = user.getEffectiveTier ? user.getEffectiveTier() : user.subscriptionTier;
+
+    if (effectiveTier === 'free') {
+      return res.status(400).json({
+        error: 'You do not have an active paid subscription to cancel.',
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+    }
+
+    if (user.subscriptionCancelledAt) {
+      const expDate = user.subscriptionExpiresAt
+        ? new Date(user.subscriptionExpiresAt).toLocaleDateString()
+        : 'end of billing cycle';
+      return res.json({
+        success: true,
+        alreadyCancelled: true,
+        message: `Your subscription is already scheduled for cancellation and will expire on ${expDate}.`,
+        user: user.toSafeObject(),
+      });
+    }
+
+    user.subscriptionCancelledAt = new Date();
+    await user.save();
+
+    const expDate = user.subscriptionExpiresAt
+      ? new Date(user.subscriptionExpiresAt).toLocaleDateString()
+      : 'end of billing cycle';
+
+    return res.json({
+      success: true,
+      message: `Subscription renewal cancelled. You will retain all paid benefits until your plan expires on ${expDate}.`,
+      user: user.toSafeObject(),
+    });
+  } catch (err) {
+    console.error('[Cancel Subscription Error]', err);
+    return res.status(500).json({ error: 'Failed to cancel subscription.' });
   }
 });
 
@@ -271,7 +404,10 @@ router.get('/payments/history', requireAuth, async (req, res) => {
       id: p._id.toString(),
       razorpayOrderId: p.razorpayOrderId,
       razorpayPaymentId: p.razorpayPaymentId || null,
-      tier: p.tier,
+      tier: normalizeTier(p.tier) || p.tier,
+      billingCycle: p.billingCycle || 'monthly',
+      durationDays: p.durationDays || 30,
+      invoiceNumber: p.invoiceNumber || null,
       amount: p.amount,
       currency: p.currency,
       status: p.status,

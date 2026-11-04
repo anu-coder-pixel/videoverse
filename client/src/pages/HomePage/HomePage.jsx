@@ -255,9 +255,16 @@ export default function HomePage() {
             <div className="home-page__section-title">
               <Download size={22} className="text-brand-primary" />
               <h2>Controlled Video Downloads</h2>
-              <span className="badge badge--success">
-                {quotaInfo.remaining} of {quotaInfo.limit} Left Today
+              <span className={`badge ${quotaInfo.limit === null ? 'badge--vip' : quotaInfo.remaining === 0 ? 'badge--danger' : 'badge--success'}`}>
+                {quotaInfo.limit === null
+                  ? '👑 Unlimited VIP Quota'
+                  : `${quotaInfo.remaining} of ${quotaInfo.limit} Left Today`}
               </span>
+              {quotaInfo.tier && (
+                <span className={`tier-badge-pill tier-badge-pill--${quotaInfo.tier}`}>
+                  {quotaInfo.tier === 'gold' ? 'Gold Plan' : quotaInfo.tier === 'silver' ? 'Silver Plan' : quotaInfo.tier === 'bronze' ? 'Bronze Plan' : 'Free Plan'}
+                </span>
+              )}
             </div>
             <p>Download original high-quality video files directly to your device for offline viewing.</p>
           </div>
@@ -268,7 +275,9 @@ export default function HomePage() {
               <div className="downloads-quota-card__metric">
                 <span className="downloads-quota-card__label">Daily Quota Status</span>
                 <strong className="downloads-quota-card__value">
-                  {quotaInfo.used} / {quotaInfo.limit} distinct videos downloaded
+                  {quotaInfo.limit === null
+                    ? `${quotaInfo.used} distinct videos downloaded (No Daily Limit)`
+                    : `${quotaInfo.used} / ${quotaInfo.limit} distinct ${quotaInfo.limit === 1 ? 'video' : 'videos'} downloaded`}
                 </strong>
               </div>
               {quotaInfo.resetsInHours ? (
@@ -279,8 +288,12 @@ export default function HomePage() {
             </div>
             <div className="downloads-quota-card__progress-bar">
               <div
-                className="downloads-quota-card__progress-fill"
-                style={{ width: `${(quotaInfo.used / quotaInfo.limit) * 100}%` }}
+                className={`downloads-quota-card__progress-fill ${quotaInfo.limit === null ? 'downloads-quota-card__progress-fill--unlimited' : ''}`}
+                style={{
+                  width: quotaInfo.limit === null
+                    ? '100%'
+                    : `${Math.min(100, (quotaInfo.used / (quotaInfo.limit || 1)) * 100)}%`
+                }}
               />
             </div>
             <div className="downloads-quota-card__notice">

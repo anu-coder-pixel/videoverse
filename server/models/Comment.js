@@ -46,6 +46,32 @@ const commentSchema = new mongoose.Schema({
     default: 0,
     min: 0,
   },
+  dislikedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  dislikesCount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  isEdited: {
+    type: Boolean,
+    default: false,
+  },
+  editedAt: {
+    type: Date,
+  },
+  location: {
+    type: String,
+    default: '',
+  },
+  parentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Comment',
+    default: null,
+    index: true,
+  },
   moderationStatus: {
     type: String,
     enum: ['approved', 'flagged', 'rejected'],
@@ -67,10 +93,17 @@ const commentSchema = new mongoose.Schema({
   },
 });
 
+// Compound indexes for optimal sorting and filtering
+commentSchema.index({ videoId: 1, moderationStatus: 1, createdAt: -1 });
+commentSchema.index({ videoId: 1, moderationStatus: 1, likesCount: -1 });
+
 commentSchema.pre('save', function () {
   this.updatedAt = Date.now();
   if (Array.isArray(this.likedBy)) {
     this.likesCount = this.likedBy.length;
+  }
+  if (Array.isArray(this.dislikedBy)) {
+    this.dislikesCount = this.dislikedBy.length;
   }
 });
 
@@ -79,9 +112,13 @@ commentSchema.methods.toSafeObject = function (currentUserId = null) {
   const hasLiked = currentUserId && Array.isArray(this.likedBy)
     ? this.likedBy.some(id => id.toString() === currentUserId.toString())
     : false;
+  const hasDisliked = currentUserId && Array.isArray(this.dislikedBy)
+    ? this.dislikedBy.some(id => id.toString() === currentUserId.toString())
+    : false;
 
   return {
     id: this._id.toString(),
+    userId: this.userId ? this.userId.toString() : null,
     videoId: this.videoId,
     author: this.author,
     authorInitials: this.authorInitials,
@@ -89,7 +126,13 @@ commentSchema.methods.toSafeObject = function (currentUserId = null) {
     text: this.text,
     language: this.language,
     likesCount: this.likesCount || (this.likedBy ? this.likedBy.length : 0),
+    dislikesCount: this.dislikesCount || (this.dislikedBy ? this.dislikedBy.length : 0),
     hasLiked: !!hasLiked,
+    hasDisliked: !!hasDisliked,
+    isEdited: !!this.isEdited,
+    editedAt: this.editedAt,
+    location: this.location || '',
+    parentId: this.parentId ? this.parentId.toString() : null,
     createdAt: this.createdAt,
     timeAgo: formatTimeAgo(this.createdAt),
   };

@@ -71,8 +71,8 @@ function detectLanguage(text) {
   // 2. Diacritics
   if (/[ãõ]/i.test(clean)) return 'pt'; // Portuguese specific nasal vowels
   if (/[áéíóúñ¿¡]/i.test(clean)) return 'es'; // Spanish
-  if (/[àâçéèêëîïôûùüÿœæ]/i.test(clean)) return 'fr'; // French
   if (/[äöüß]/i.test(clean)) return 'de'; // German
+  if (/[àâçéèêëîïôûùÿœæ]/i.test(clean)) return 'fr'; // French
 
   const lower = clean.toLowerCase();
 

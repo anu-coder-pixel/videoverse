@@ -408,6 +408,97 @@
   width: 100%;
 }
 
-.comments__show-more:hover {
+.comment__show-more:hover {
   background: rgba(108, 99, 255, 0.08);
+}
+
+/* ── Edited & Location Badges ── */
+.comment__edited-badge {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.comment__location-badge {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-elevated);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Inline Comment Edit Form ── */
+.comment__edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.comment__edit-input {
+  width: 100%;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.comment__edit-input:focus {
+  border-color: var(--color-brand-primary);
+}
+
+.comment__edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.comment__edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: opacity var(--transition-fast);
+}
+
+.comment__edit-btn--cancel {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+}
+
+.comment__edit-btn--save {
+  background: var(--color-brand-primary);
+  color: white;
+}
+
+.comment__edit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dislike and Owner Action States */
+.comment__action-btn--disliked {
+  color: #ef4444;
+}
+
+.comment__action-btn--edit:hover {
+  color: var(--color-brand-primary);
+}
+
+.comment__action-btn--delete:hover {
+  color: #ef4444;
 }

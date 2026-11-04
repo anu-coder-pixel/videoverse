@@ -190,7 +190,13 @@ export default function WatchPage() {
                   onClick={handleDownload}
                   disabled={downloadingVideoId === video.id}
                   aria-label={downloadingVideoId === video.id ? 'Downloading video file...' : 'Download video file'}
-                  title={quotaInfo ? `${quotaInfo.remaining} daily downloads remaining` : 'Download video'}
+                  title={
+                    quotaInfo
+                      ? quotaInfo.remaining === Infinity
+                        ? 'Unlimited daily downloads'
+                        : `${quotaInfo.remaining} daily download${quotaInfo.remaining === 1 ? '' : 's'} remaining`
+                      : 'Download video'
+                  }
                   id="download-btn"
                 >
                   {downloadingVideoId === video.id ? (

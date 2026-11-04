@@ -819,12 +819,13 @@ export function AppProvider({ children }) {
 
   // ── Controlled Video Downloads (Task 2) ──────────────────────────────────
   const [quotaInfo, setQuotaInfo] = useState({
-    limit: 5,
+    limit: 1,
     used: 0,
-    remaining: 5,
+    remaining: 1,
     resetsAt: null,
     resetsInHours: null,
     distinctVideoIds: [],
+    tier: 'free',
   });
   const [downloadsHistory, setDownloadsHistory] = useState([]);
   const [downloadsLoading, setDownloadsLoading] = useState(false);
@@ -867,12 +868,13 @@ export function AppProvider({ children }) {
     } else {
       setDownloadsHistory([]);
       setQuotaInfo({
-        limit: 5,
+        limit: 1,
         used: 0,
-        remaining: 5,
+        remaining: 1,
         resetsAt: null,
         resetsInHours: null,
         distinctVideoIds: [],
+        tier: 'free',
       });
     }
   }, [currentUser, fetchDownloadStatus, fetchDownloadHistory]);
@@ -955,11 +957,12 @@ export function AppProvider({ children }) {
    * 2. Loads Razorpay checkout script if not already loaded.
    * 3. Opens the Razorpay modal.
    * 4. On payment.success, verifies signature server-side.
-   * 5. On success, updates currentUser tier in context.
+   * 5. On success, updates currentUser tier in context and refreshes quota.
    *
-   * @param {'premium'|'vip'} tier
+   * @param {'bronze'|'silver'|'gold'|'premium'|'vip'} tier
+   * @param {'monthly'|'quarterly'|'yearly'} billingCycle
    */
-  const upgradeTier = useCallback(async (tier) => {
+  const upgradeTier = useCallback(async (tier, billingCycle = 'monthly') => {
     if (!currentUser) {
       openAuthModal();
       showToast('Please sign in to upgrade your plan.');
@@ -973,7 +976,7 @@ export function AppProvider({ children }) {
       const orderRes = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier }),
+        body: JSON.stringify({ tier, billingCycle }),
         credentials: 'include',
       });
 
@@ -999,14 +1002,21 @@ export function AppProvider({ children }) {
 
       // Step 3: Open Razorpay checkout modal
       await new Promise((resolve, reject) => {
+        const themeColor =
+          tier === 'gold' || tier === 'vip'
+            ? '#f59e0b'
+            : tier === 'silver' || tier === 'premium'
+            ? '#94a3b8'
+            : '#cd7f32';
+
         const options = {
           key: keyId,
           amount,
           currency,
           name: 'VideoVerse',
-          description: `${tier.charAt(0).toUpperCase() + tier.slice(1)} Subscription`,
+          description: `${tier.charAt(0).toUpperCase() + tier.slice(1)} (${billingCycle}) Subscription`,
           order_id: orderId,
-          theme: { color: tier === 'vip' ? '#a855f7' : '#f59e0b' },
+          theme: { color: themeColor },
           prefill: {
             name: currentUser.name,
             email: currentUser.email,
@@ -1028,9 +1038,15 @@ export function AppProvider({ children }) {
               const verifyData = await verifyRes.json();
 
               if (verifyRes.ok && verifyData.success) {
-                // Step 5: Update user tier in context
+                // Step 5: Update user tier in context and refresh quota
                 setCurrentUser(verifyData.user);
-                const tierLabel = tier === 'vip' ? '👑 VIP' : '⭐ Premium';
+                await fetchDownloadStatus();
+                const tierLabel =
+                  tier === 'gold' || tier === 'vip'
+                    ? '👑 Gold'
+                    : tier === 'silver' || tier === 'premium'
+                    ? '🥈 Silver'
+                    : '🥉 Bronze';
                 showToast(`🎉 Upgraded to ${tierLabel}! Enjoy your new benefits.`, 5000);
                 resolve();
               } else {
@@ -1068,7 +1084,32 @@ export function AppProvider({ children }) {
     } finally {
       setPaymentLoading(false);
     }
-  }, [currentUser, openAuthModal, showToast]);
+  }, [currentUser, openAuthModal, showToast, fetchDownloadStatus]);
+
+  const cancelSubscription = useCallback(async () => {
+    if (!currentUser) return false;
+    try {
+      const res = await fetch('/api/payments/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.user) setCurrentUser(data.user);
+        showToast(data.message, 5000);
+        await fetchDownloadStatus();
+        return true;
+      } else {
+        showToast(`❌ ${data.error || 'Failed to cancel subscription.'}`, 5000);
+        return false;
+      }
+    } catch (err) {
+      console.error('[cancelSubscription Error]', err);
+      showToast('❌ Failed to cancel subscription.', 5000);
+      return false;
+    }
+  }, [currentUser, showToast, fetchDownloadStatus]);
 
   const value = {
     // Video data (live from API or local fallback)
@@ -1145,6 +1186,7 @@ export function AppProvider({ children }) {
     // Subscriptions & Payments (Task 3)
     paymentLoading,
     upgradeTier,
+    cancelSubscription,
 
     // Global App Toast
     appToast,

@@ -24,9 +24,14 @@ router.get('/videos/:videoId/comments', optionalAuth, async (req, res) => {
       return res.status(400).json({ error: 'Video ID is required.' });
     }
 
-    const sortOption = sort === 'newest'
-      ? { createdAt: -1 }
-      : { likesCount: -1, createdAt: -1 };
+    let sortOption;
+    if (sort === 'newest') {
+      sortOption = { createdAt: -1 };
+    } else if (sort === 'oldest') {
+      sortOption = { createdAt: 1 };
+    } else {
+      sortOption = { likesCount: -1, createdAt: -1 };
+    }
 
     // Resolve canonical video ID if valid
     const video = await Video.findOne({
@@ -52,9 +57,13 @@ router.get('/videos/:videoId/comments', optionalAuth, async (req, res) => {
       const hasLiked = currentUserId && Array.isArray(doc.likedBy)
         ? doc.likedBy.some(id => id.toString() === currentUserId.toString())
         : false;
+      const hasDisliked = currentUserId && Array.isArray(doc.dislikedBy)
+        ? doc.dislikedBy.some(id => id.toString() === currentUserId.toString())
+        : false;
 
       return {
         id: doc._id.toString(),
+        userId: doc.userId ? doc.userId.toString() : null,
         videoId: doc.videoId,
         author: doc.author,
         authorInitials: doc.authorInitials,
@@ -62,7 +71,13 @@ router.get('/videos/:videoId/comments', optionalAuth, async (req, res) => {
         text: doc.text,
         language: doc.language || 'en',
         likesCount: doc.likesCount || (doc.likedBy ? doc.likedBy.length : 0),
+        dislikesCount: doc.dislikesCount || (doc.dislikedBy ? doc.dislikedBy.length : 0),
         hasLiked: !!hasLiked,
+        hasDisliked: !!hasDisliked,
+        isEdited: !!doc.isEdited,
+        editedAt: doc.editedAt || null,
+        location: doc.location || '',
+        parentId: doc.parentId ? doc.parentId.toString() : null,
         createdAt: doc.createdAt,
         timeAgo: formatTimeAgo(doc.createdAt),
       };
@@ -265,6 +280,181 @@ router.put('/comments/:commentId/like', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to update like status' });
   }
 });
+
+/**
+ * PUT /api/comments/:commentId/dislike
+ *
+ * Protected access: Requires authenticated user (requireAuth).
+ * Concurrency-safe atomic toggle for comment dislikes.
+ */
+router.put('/comments/:commentId/dislike', requireAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { action } = req.body;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid comment ID format.' });
+    }
+
+    let updatedDoc;
+    if (action === 'undislike') {
+      updatedDoc = await Comment.findOneAndUpdate(
+        { _id: commentId, dislikedBy: userId },
+        { $pull: { dislikedBy: userId } },
+        { new: true }
+      );
+    } else {
+      updatedDoc = await Comment.findOneAndUpdate(
+        { _id: commentId, dislikedBy: { $ne: userId } },
+        {
+          $addToSet: { dislikedBy: userId },
+          $pull: { likedBy: userId }
+        },
+        { new: true }
+      );
+    }
+
+    if (!updatedDoc) {
+      updatedDoc = await Comment.findById(commentId);
+    }
+
+    const actualDislikes = updatedDoc.dislikedBy ? updatedDoc.dislikedBy.length : 0;
+    const actualLikes = updatedDoc.likedBy ? updatedDoc.likedBy.length : 0;
+
+    await Comment.updateOne(
+      { _id: commentId },
+      { $set: { dislikesCount: actualDislikes, likesCount: actualLikes } }
+    );
+
+    const hasDisliked = updatedDoc.dislikedBy
+      ? updatedDoc.dislikedBy.some(id => id.toString() === userId.toString())
+      : false;
+    const hasLiked = updatedDoc.likedBy
+      ? updatedDoc.likedBy.some(id => id.toString() === userId.toString())
+      : false;
+
+    return res.json({
+      disliked: hasDisliked,
+      dislikesCount: actualDislikes,
+      liked: hasLiked,
+      likesCount: actualLikes,
+      commentId: updatedDoc._id.toString(),
+    });
+  } catch (err) {
+    console.error('[Dislike Comment Error]', err);
+    return res.status(500).json({ error: 'Failed to update dislike status.' });
+  }
+});
+
+/**
+ * PUT /api/comments/:commentId
+ *
+ * Protected access: Requires authenticated user (requireAuth).
+ * Ownership: User can only edit their own comments.
+ * Moderation: Evaluates updated text before committing.
+ */
+router.put('/comments/:commentId', requireAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { text } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid comment ID format.' });
+    }
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: 'Comment text cannot be empty.' });
+    }
+
+    if (text.trim().length > 1000) {
+      return res.status(400).json({ error: 'Comment cannot exceed 1000 characters.' });
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.' });
+    }
+
+    // Ownership check
+    if (comment.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'You are not authorized to edit this comment.' });
+    }
+
+    // Moderation evaluation
+    const moderationResult = evaluateComment(text);
+    if (moderationResult.status === 'rejected') {
+      return res.status(400).json({
+        error: moderationResult.reason,
+        code: 'MODERATION_REJECTED',
+      });
+    }
+
+    comment.text = text.trim();
+    comment.language = moderationResult.language || 'en';
+    comment.moderationStatus = moderationResult.status;
+    comment.moderationReason = moderationResult.reason || '';
+    comment.isEdited = true;
+    comment.editedAt = new Date();
+
+    await comment.save();
+
+    return res.json({
+      success: true,
+      message: moderationResult.status === 'flagged'
+        ? 'Comment updated and pending automated review.'
+        : 'Comment updated successfully.',
+      comment: comment.toSafeObject(req.user._id),
+    });
+  } catch (err) {
+    console.error('[Edit Comment Error]', err);
+    return res.status(500).json({ error: 'Failed to edit comment.' });
+  }
+});
+
+/**
+ * DELETE /api/comments/:commentId
+ *
+ * Protected access: Requires authenticated user (requireAuth).
+ * Ownership: User can only delete their own comments.
+ */
+router.delete('/comments/:commentId', requireAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid comment ID format.' });
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.' });
+    }
+
+    // Ownership check
+    if (comment.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'You are not authorized to delete this comment.' });
+    }
+
+    // Delete comment and any replies referencing it
+    await Comment.deleteMany({
+      $or: [
+        { _id: commentId },
+        { parentId: commentId }
+      ]
+    });
+
+    return res.json({
+      success: true,
+      message: 'Comment deleted successfully.',
+      deletedCommentId: commentId,
+    });
+  } catch (err) {
+    console.error('[Delete Comment Error]', err);
+    return res.status(500).json({ error: 'Failed to delete comment.' });
+  }
+});
+
 // Scoped dictionary for high-frequency Hinglish and colloquial phrases
 const HINGLISH_DICTIONARY = {
   'bahut badhiya': 'Very good',
@@ -391,6 +581,7 @@ const REGIONAL_INDIC_DICTIONARY = {
     'ਬਹੁਤ ਵਧੀਆ': 'Very good',
     'ਧੰਨਵਾਦ': 'Thank you',
     'bahut vadiya': 'Very good',
+    'bahut vadiya video': 'Very good video',
     'sat sri akal': 'Greetings / Hello',
   },
   pt: {
@@ -564,9 +755,8 @@ router.get('/comments/:commentId/translate', async (req, res) => {
 
     const sourceText = comment.text.trim();
 
-    // Re-evaluate language directly on sourceText to never blindly trust a stale stored value
-    const freshDetected = detectLanguage(sourceText);
-    const sourceLang = freshDetected !== 'en' ? freshDetected : (comment.language || 'en');
+    // Re-evaluate language directly on sourceText as the authoritative source of truth
+    const sourceLang = detectLanguage(sourceText);
 
     // If legitimately already in target language (genuine English comment targeting English)
     if (sourceLang === target) {

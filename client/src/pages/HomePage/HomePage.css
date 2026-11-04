@@ -340,6 +340,52 @@
   transition: width 0.3s ease;
 }
 
+.downloads-quota-card__progress-fill--unlimited {
+  background: linear-gradient(90deg, #d97706, #f59e0b, #ec4899, #a855f7);
+  background-size: 200% 100%;
+  animation: shine-move 3s linear infinite;
+}
+
+@keyframes shine-move {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.tier-badge-pill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.tier-badge-pill--free {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.tier-badge-pill--bronze {
+  background: rgba(205, 127, 50, 0.15);
+  color: #e09858;
+  border: 1px solid rgba(205, 127, 50, 0.4);
+}
+
+.tier-badge-pill--silver,
+.tier-badge-pill--premium {
+  background: rgba(226, 232, 240, 0.15);
+  color: #e2e8f0;
+  border: 1px solid rgba(226, 232, 240, 0.4);
+}
+
+.tier-badge-pill--gold,
+.tier-badge-pill--vip {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+}
+
 .downloads-quota-card__notice {
   display: flex;
   align-items: flex-start;

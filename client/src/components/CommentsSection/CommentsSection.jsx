@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ThumbsUp,
+  ThumbsDown,
   MessageSquare,
   ChevronDown,
   ChevronUp,
@@ -10,15 +11,27 @@ import {
   Send,
   Loader2,
   Sparkles,
+  Edit2,
+  Trash2,
+  Check,
+  X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import './CommentsSection.css';
 
 /**
- * Language script labels for user clarity
+ * Complete language script labels for user clarity
  */
 const LANGUAGE_NAMES = {
   hi: 'Hindi',
+  bn: 'Bengali',
+  ta: 'Tamil',
+  te: 'Telugu',
+  mr: 'Marathi',
+  pa: 'Punjabi',
+  gu: 'Gujarati',
+  ml: 'Malayalam',
+  ur: 'Urdu',
   ar: 'Arabic',
   ja: 'Japanese',
   ko: 'Korean',
@@ -27,6 +40,7 @@ const LANGUAGE_NAMES = {
   es: 'Spanish',
   fr: 'French',
   de: 'German',
+  pt: 'Portuguese',
   en: 'English',
 };
 
@@ -38,8 +52,14 @@ export default function CommentsSection({ videoId }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
-  const [sortBy, setSortBy] = useState('top'); // 'top' | 'newest'
+  const [sortBy, setSortBy] = useState('top'); // 'top' | 'newest' | 'oldest'
   const [showAll, setShowAll] = useState(false);
+
+  // Edit & Delete state
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const [editingSubmitting, setEditingSubmitting] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState(null);
 
   // Moderation & Feedback notices
   const [moderationNotice, setModerationNotice] = useState(null);
@@ -226,6 +246,137 @@ export default function CommentsSection({ videoId }) {
     }
   }
 
+  // ── Concurrency-Safe Dislike Toggle ──────────────────────────────────────
+  async function handleDislikeToggle(commentId) {
+    if (!currentUser) {
+      openAuthModal();
+      showToast('Please sign in to react to comments.');
+      return;
+    }
+
+    const currentComment = comments.find(c => c.id === commentId);
+    if (!currentComment) return;
+
+    const currentlyDisliked = !!currentComment.hasDisliked;
+    const targetAction = currentlyDisliked ? 'undislike' : 'dislike';
+
+    setComments(prev =>
+      prev.map(c => {
+        if (c.id === commentId) {
+          return {
+            ...c,
+            hasDisliked: !currentlyDisliked,
+            dislikesCount: Math.max(0, (c.dislikesCount || 0) + (currentlyDisliked ? -1 : 1)),
+            hasLiked: currentlyDisliked ? c.hasLiked : false,
+            likesCount: !currentlyDisliked && c.hasLiked ? Math.max(0, c.likesCount - 1) : c.likesCount,
+          };
+        }
+        return c;
+      })
+    );
+
+    try {
+      const res = await fetch(`/api/comments/${commentId}/dislike`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: targetAction }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update dislike');
+      const result = await res.json();
+
+      setComments(prev =>
+        prev.map(c => {
+          if (c.id === commentId) {
+            return {
+              ...c,
+              hasDisliked: !!result.disliked,
+              dislikesCount: typeof result.dislikesCount === 'number' ? result.dislikesCount : c.dislikesCount,
+              hasLiked: !!result.liked,
+              likesCount: typeof result.likesCount === 'number' ? result.likesCount : c.likesCount,
+            };
+          }
+          return c;
+        })
+      );
+    } catch (err) {
+      console.error('[Dislike Error]', err);
+      showToast('Could not update dislike.');
+    }
+  }
+
+  // ── Edit Comment ──────────────────────────────────────────────────────────
+  function handleStartEdit(comment) {
+    setEditingCommentId(comment.id);
+    setEditingText(comment.text);
+  }
+
+  function handleCancelEdit() {
+    setEditingCommentId(null);
+    setEditingText('');
+  }
+
+  async function handleSaveEdit(commentId) {
+    if (!editingText.trim()) return;
+    setEditingSubmitting(true);
+
+    try {
+      const res = await fetch(`/api/comments/${commentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ text: editingText.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Failed to edit comment.');
+        return;
+      }
+
+      setComments(prev =>
+        prev.map(c => (c.id === commentId ? { ...c, text: data.comment.text, isEdited: true, language: data.comment.language } : c))
+      );
+      setEditingCommentId(null);
+      setEditingText('');
+      showToast('Comment updated successfully!');
+    } catch (err) {
+      console.error('[Edit Error]', err);
+      showToast('Network error while editing comment.');
+    } finally {
+      setEditingSubmitting(false);
+    }
+  }
+
+  // ── Delete Comment ────────────────────────────────────────────────────────
+  async function handleDeleteComment(commentId) {
+    if (!window.confirm('Are you sure you want to delete this comment?')) return;
+    setDeletingCommentId(commentId);
+
+    try {
+      const res = await fetch(`/api/comments/${commentId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Failed to delete comment.');
+        return;
+      }
+
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      setTotalCount(prev => Math.max(0, prev - 1));
+      showToast('Comment deleted successfully.');
+    } catch (err) {
+      console.error('[Delete Error]', err);
+      showToast('Network error while deleting comment.');
+    } finally {
+      setDeletingCommentId(null);
+    }
+  }
+
   // ── Multilingual Translation ─────────────────────────────────────────────
   async function handleTranslate(comment) {
     const commentId = comment.id;
@@ -303,6 +454,7 @@ export default function CommentsSection({ videoId }) {
           >
             <option value="top">Top Comments</option>
             <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
           </select>
         </div>
       </div>
@@ -452,6 +604,14 @@ export default function CommentsSection({ videoId }) {
                   <div className="comment__meta">
                     <span className="comment__author">{comment.author}</span>
                     <span className="comment__time">{comment.timeAgo || 'recently'}</span>
+                    {comment.isEdited && (
+                      <span className="comment__edited-badge" title={comment.editedAt ? `Edited ${formatTimeAgo(comment.editedAt)}` : 'Edited'}>
+                        (edited)
+                      </span>
+                    )}
+                    {comment.location && (
+                      <span className="comment__location-badge">📍 {comment.location}</span>
+                    )}
                     {isNonEnglish && (
                       <span className="comment__lang-badge" title={`Detected script: ${LANGUAGE_NAMES[comment.language] || comment.language}`}>
                         {LANGUAGE_NAMES[comment.language] || comment.language.toUpperCase()}
@@ -459,10 +619,44 @@ export default function CommentsSection({ videoId }) {
                     )}
                   </div>
 
-                  {/* Comment text with native Unicode RTL/LTR support */}
-                  <p className="comment__text" dir="auto">
-                    {showTranslated ? translation.translatedText : comment.text}
-                  </p>
+                  {/* Comment text with inline edit mode or standard display */}
+                  {editingCommentId === comment.id ? (
+                    <div className="comment__edit-form">
+                      <textarea
+                        className="comment__edit-input"
+                        value={editingText}
+                        onChange={e => setEditingText(e.target.value)}
+                        maxLength={1000}
+                        rows={2}
+                        disabled={editingSubmitting}
+                        aria-label="Edit comment text"
+                      />
+                      <div className="comment__edit-actions">
+                        <button
+                          type="button"
+                          className="comment__edit-btn comment__edit-btn--cancel"
+                          onClick={handleCancelEdit}
+                          disabled={editingSubmitting}
+                        >
+                          <X size={12} />
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="comment__edit-btn comment__edit-btn--save"
+                          onClick={() => handleSaveEdit(comment.id)}
+                          disabled={editingSubmitting || !editingText.trim()}
+                        >
+                          {editingSubmitting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="comment__text" dir="auto">
+                      {showTranslated ? translation.translatedText : comment.text}
+                    </p>
+                  )}
 
                   {/* Translation Box / Attribution */}
                   {showTranslated && (
@@ -491,6 +685,7 @@ export default function CommentsSection({ videoId }) {
 
                   {/* Comment Actions */}
                   <div className="comment__actions">
+                    {/* Like Button */}
                     <button
                       className={`comment__action-btn ${comment.hasLiked ? 'comment__action-btn--liked' : ''}`}
                       onClick={() => handleLikeToggle(comment.id)}
@@ -499,6 +694,17 @@ export default function CommentsSection({ videoId }) {
                     >
                       <ThumbsUp size={13} />
                       <span>{comment.likesCount || 0}</span>
+                    </button>
+
+                    {/* Dislike Button */}
+                    <button
+                      className={`comment__action-btn ${comment.hasDisliked ? 'comment__action-btn--disliked' : ''}`}
+                      onClick={() => handleDislikeToggle(comment.id)}
+                      aria-label={`Dislike comment by ${comment.author}. Current dislikes: ${comment.dislikesCount || 0}`}
+                      aria-pressed={!!comment.hasDisliked}
+                    >
+                      <ThumbsDown size={13} />
+                      {comment.dislikesCount > 0 && <span>{comment.dislikesCount}</span>}
                     </button>
 
                     {/* Translation Button */}
@@ -522,6 +728,35 @@ export default function CommentsSection({ videoId }) {
                           : 'Translate'}
                       </span>
                     </button>
+
+                    {/* Owner Edit & Delete Buttons */}
+                    {currentUser && comment.userId && String(comment.userId) === String(currentUser._id || currentUser.id) && (
+                      <>
+                        <button
+                          className="comment__action-btn comment__action-btn--edit"
+                          onClick={() => handleStartEdit(comment)}
+                          title="Edit your comment"
+                          aria-label="Edit comment"
+                        >
+                          <Edit2 size={12} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          className="comment__action-btn comment__action-btn--delete"
+                          onClick={() => handleDeleteComment(comment.id)}
+                          disabled={deletingCommentId === comment.id}
+                          title="Delete your comment"
+                          aria-label="Delete comment"
+                        >
+                          {deletingCommentId === comment.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={12} />
+                          )}
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </li>

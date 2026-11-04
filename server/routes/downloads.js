@@ -7,20 +7,36 @@ const Download = require('../models/Download');
 const { requireAuth } = require('../middleware/auth');
 const { sanitizeFilename, safeFetchVideo } = require('../utils/downloadSecurity');
 
-const DEFAULT_DAILY_LIMIT = 5; // Free tier fallback (used only when tier is absent)
+const DEFAULT_DAILY_LIMIT = 1; // Free tier limit: exactly 1 download per 24 hours
 const RESERVATION_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 const QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;  // 24 hours
 
 /**
+ * Normalizes tier names and maps legacy aliases ('vip' -> 'gold', 'premium' -> 'silver')
+ * @param {string} tier
+ * @returns {'free'|'bronze'|'silver'|'gold'}
+ */
+function normalizeTier(tier) {
+  if (!tier) return 'free';
+  const t = String(tier).toLowerCase().trim();
+  if (t === 'gold' || t === 'vip') return 'gold';
+  if (t === 'silver' || t === 'premium') return 'silver';
+  if (t === 'bronze') return 'bronze';
+  return 'free';
+}
+
+/**
  * Returns the daily distinct-video download limit for a given subscription tier.
  *
- * @param {'free'|'premium'|'vip'|undefined} tier
- * @returns {number} Limit (Infinity for VIP = no cap)
+ * @param {'free'|'bronze'|'silver'|'gold'|'premium'|'vip'|undefined} tier
+ * @returns {number} Limit (Infinity for Gold/VIP = no cap)
  */
 function getDailyLimit(tier) {
-  if (tier === 'vip') return Infinity;
-  if (tier === 'premium') return 25;
-  return DEFAULT_DAILY_LIMIT; // 'free' or any unknown value
+  const norm = normalizeTier(tier);
+  if (norm === 'gold') return Infinity;
+  if (norm === 'silver') return 25;
+  if (norm === 'bronze') return 5;
+  return DEFAULT_DAILY_LIMIT; // 1 for 'free' or unknown
 }
 
 /**
@@ -44,18 +60,47 @@ async function cleanupStaleReservations(userId) {
 }
 
 /**
- * Helper: Computes rolling 24-hour distinct video download quota for a user
+ * Helper: Computes rolling 24-hour distinct video download quota for a user,
+ * checking subscription validity and handling expirations safely.
+ *
  * @param {import('mongoose').Types.ObjectId} userId
- * @param {'free'|'premium'|'vip'} tier
+ * @param {object|string} userOrTier User document or tier string
  */
-async function getUserQuotaInfo(userId, tier) {
+async function getUserQuotaInfo(userId, userOrTier) {
+  let tier = 'free';
+  let isExpired = false;
+  let expiresAt = null;
+  let billingCycle = null;
+  let isCancelled = false;
+
+  if (typeof userOrTier === 'object' && userOrTier !== null) {
+    expiresAt = userOrTier.subscriptionExpiresAt || null;
+    billingCycle = userOrTier.subscriptionBillingCycle || null;
+    isCancelled = Boolean(userOrTier.subscriptionCancelledAt);
+
+    if (typeof userOrTier.getEffectiveTier === 'function') {
+      tier = userOrTier.getEffectiveTier();
+    } else {
+      tier = normalizeTier(userOrTier.subscriptionTier);
+      if (tier !== 'free' && expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+        tier = 'free';
+        isExpired = true;
+      }
+    }
+    if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+      isExpired = true;
+    }
+  } else if (typeof userOrTier === 'string') {
+    tier = normalizeTier(userOrTier);
+  }
+
   const windowStart = new Date(Date.now() - QUOTA_WINDOW_MS);
   const dailyLimit = getDailyLimit(tier);
 
   // Clean stale reservations first
   await cleanupStaleReservations(userId);
 
-  // VIP users: return early with unlimited quota (no DB read needed for quota)
+  // Gold / VIP users: return early with unlimited quota
   if (dailyLimit === Infinity) {
     return {
       limit: null,       // null signals 'unlimited'
@@ -64,7 +109,11 @@ async function getUserQuotaInfo(userId, tier) {
       resetsAt: null,
       resetsInHours: null,
       distinctVideoIds: [],
-      tier: 'vip',
+      tier,
+      isExpired,
+      expiresAt,
+      billingCycle,
+      isCancelled,
     };
   }
 
@@ -96,7 +145,11 @@ async function getUserQuotaInfo(userId, tier) {
     resetsAt,
     resetsInHours,
     distinctVideoIds: Array.from(distinctVideoIds),
-    tier: tier || 'free',
+    tier,
+    isExpired,
+    expiresAt,
+    billingCycle,
+    isCancelled,
   };
 }
 
@@ -107,7 +160,7 @@ async function getUserQuotaInfo(userId, tier) {
  */
 router.get('/downloads/status', requireAuth, async (req, res) => {
   try {
-    const quotaInfo = await getUserQuotaInfo(req.user._id, req.user.subscriptionTier);
+    const quotaInfo = await getUserQuotaInfo(req.user._id, req.user);
     res.json({
       success: true,
       quota: quotaInfo,
@@ -223,13 +276,14 @@ router.get('/videos/:id/download', requireAuth, async (req, res) => {
     }
 
     // 2. Check and enforce 24-hour distinct video quota
-    const quotaInfo = await getUserQuotaInfo(userId, req.user.subscriptionTier);
+    const quotaInfo = await getUserQuotaInfo(userId, req.user);
     const isAlreadyDownloaded = quotaInfo.distinctVideoIds.includes(video.id);
-    const dailyLimit = getDailyLimit(req.user.subscriptionTier);
+    const dailyLimit = quotaInfo.limit === null ? Infinity : quotaInfo.limit;
 
     if (!isAlreadyDownloaded && quotaInfo.remaining <= 0) {
+      const videoWord = dailyLimit === 1 ? 'video' : 'videos';
       return res.status(429).json({
-        error: `Daily download quota exceeded (limit: ${dailyLimit} distinct videos per 24 hours for ${req.user.subscriptionTier} plan).`,
+        error: `Daily download quota exceeded (limit: ${dailyLimit} distinct ${videoWord} per 24 hours for ${quotaInfo.tier} plan).`,
         code: 'QUOTA_EXCEEDED',
         quota: quotaInfo,
       });
@@ -249,7 +303,7 @@ router.get('/videos/:id/download', requireAuth, async (req, res) => {
     await downloadRecord.save();
 
     // 3b. Concurrency guard: re-verify distinct chronological order in case of simultaneous requests
-    // VIP has no quota limit, so skip the concurrency check for them
+    // Gold/VIP has no quota limit, so skip the concurrency check for them
     if (!isAlreadyDownloaded && dailyLimit !== Infinity) {
       const windowStart = new Date(Date.now() - QUOTA_WINDOW_MS);
       const allActive = await Download.find({
@@ -273,14 +327,15 @@ router.get('/videos/:id/download', requireAuth, async (req, res) => {
         downloadRecord.errorMessage = 'Concurrency race: daily quota limit reached by simultaneous request.';
         await downloadRecord.save();
 
+        const videoWord = dailyLimit === 1 ? 'video' : 'videos';
         return res.status(429).json({
-          error: `Daily download quota exceeded (limit: ${dailyLimit} distinct videos per 24 hours for ${req.user.subscriptionTier} plan).`,
+          error: `Daily download quota exceeded (limit: ${dailyLimit} distinct ${videoWord} per 24 hours for ${quotaInfo.tier} plan).`,
           code: 'QUOTA_EXCEEDED',
           quota: {
             limit: dailyLimit,
             used: dailyLimit,
             remaining: 0,
-            tier: req.user.subscriptionTier,
+            tier: quotaInfo.tier,
           },
         });
       }

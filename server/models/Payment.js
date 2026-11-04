@@ -46,8 +46,30 @@ const paymentSchema = new mongoose.Schema(
     // The tier this payment was intended to unlock
     tier: {
       type: String,
-      enum: ['premium', 'vip'],
+      enum: ['bronze', 'silver', 'gold', 'premium', 'vip'],
       required: true,
+      index: true,
+    },
+
+    // Billing cycle selected
+    billingCycle: {
+      type: String,
+      enum: ['monthly', 'quarterly', 'yearly'],
+      default: 'monthly',
+      index: true,
+    },
+
+    // Subscription duration in days granted by this payment
+    durationDays: {
+      type: Number,
+      default: 30,
+    },
+
+    // Unique invoice reference identifier
+    invoiceNumber: {
+      type: String,
+      default: null,
+      index: true,
     },
 
     // Amount in smallest currency unit (paise for INR)
@@ -77,5 +99,6 @@ const paymentSchema = new mongoose.Schema(
 
 // Compound index for quick per-user payment lookups
 paymentSchema.index({ userId: 1, createdAt: -1 });
+paymentSchema.index({ userId: 1, status: 1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

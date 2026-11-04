@@ -49,8 +49,23 @@ const userSchema = new mongoose.Schema({
   },
   subscriptionTier: {
     type: String,
-    enum: ['free', 'premium', 'vip'],
+    enum: ['free', 'bronze', 'silver', 'gold', 'premium', 'vip'],
     default: 'free', // All new users start on the Free tier
+    index: true,
+  },
+  subscriptionExpiresAt: {
+    type: Date,
+    default: null,
+    index: true,
+  },
+  subscriptionBillingCycle: {
+    type: String,
+    enum: ['monthly', 'quarterly', 'yearly', null],
+    default: null,
+  },
+  subscriptionCancelledAt: {
+    type: Date,
+    default: null,
   },
   // User activity linked directly to the account
   likedVideos: {
@@ -83,10 +98,33 @@ const userSchema = new mongoose.Schema({
   },
 });
 
+// Compound index for subscription expiry audits
+userSchema.index({ subscriptionTier: 1, subscriptionExpiresAt: 1 });
+
 // Update timestamp on save
 userSchema.pre('save', function () {
   this.updatedAt = Date.now();
 });
+
+// Helper: Calculate effective tier based on expiration
+userSchema.methods.getEffectiveTier = function () {
+  const tier = this.subscriptionTier || 'free';
+
+  if (tier !== 'free') {
+    if (this.subscriptionExpiresAt && new Date(this.subscriptionExpiresAt).getTime() < Date.now()) {
+      return 'free';
+    }
+  }
+  return tier;
+};
+
+// Helper: Get canonical plan tier (maps 'vip' -> 'gold', 'premium' -> 'silver')
+userSchema.methods.getNormalizedTier = function () {
+  const eff = this.getEffectiveTier();
+  if (eff === 'vip') return 'gold';
+  if (eff === 'premium') return 'silver';
+  return eff;
+};
 
 // Instance method to verify password
 userSchema.methods.comparePassword = async function (candidatePassword) {
@@ -98,6 +136,17 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 
 // Safe representation for frontend consumers
 userSchema.methods.toSafeObject = function () {
+  const effectiveTier = this.getEffectiveTier ? this.getEffectiveTier() : (this.subscriptionTier || 'free');
+  const normalizedTier = this.getNormalizedTier ? this.getNormalizedTier() : (
+    effectiveTier === 'vip' ? 'gold' : effectiveTier === 'premium' ? 'silver' : effectiveTier
+  );
+  const isExpired = Boolean(
+    this.subscriptionTier &&
+    this.subscriptionTier !== 'free' &&
+    this.subscriptionExpiresAt &&
+    new Date(this.subscriptionExpiresAt).getTime() < Date.now()
+  );
+
   return {
     id: this._id.toString(),
     name: this.name,
@@ -106,7 +155,13 @@ userSchema.methods.toSafeObject = function () {
     avatarColor: this.avatarColor,
     initials: this.initials,
     themePreference: this.themePreference,
-    subscriptionTier: this.subscriptionTier,
+    subscriptionTier: effectiveTier,
+    normalizedSubscriptionTier: normalizedTier,
+    rawSubscriptionTier: this.subscriptionTier,
+    subscriptionExpiresAt: this.subscriptionExpiresAt,
+    subscriptionBillingCycle: this.subscriptionBillingCycle,
+    subscriptionCancelledAt: this.subscriptionCancelledAt,
+    isSubscriptionExpired: isExpired,
     likedVideos: this.likedVideos || [],
     dislikedVideos: this.dislikedVideos || [],
     watchLater: this.watchLater || [],
