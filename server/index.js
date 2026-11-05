@@ -13,16 +13,19 @@
 
 require('dotenv').config();
 
+const http         = require('http');
 const express      = require('express');
 const helmet       = require('helmet');
 const cors         = require('cors');
 const cookieParser = require('cookie-parser');
+const { Server: SocketIOServer } = require('socket.io');
 const connectDB    = require('./config/db');   // MongoDB connection helper
 const Video        = require('./models/Video'); // Mongoose model
 const authRoutes   = require('./routes/auth');
 const commentRoutes = require('./routes/comments');
 const downloadRoutes = require('./routes/downloads');
 const paymentRoutes = require('./routes/payments');
+const { initSignaling } = require('./socket/signaling');
 
 // ── Static data (not yet migrated to DB) ──────────────────────────────────────
 // Categories and channels are still served from the local file.
@@ -30,8 +33,9 @@ const paymentRoutes = require('./routes/payments');
 const { MOCK_CHANNELS, CATEGORIES } = require('./data/videos');
 
 // ── App setup ─────────────────────────────────────────────────────────────────
-const app  = express();
-const PORT = process.env.PORT || 5000;
+const app    = express();
+const server = http.createServer(app);
+const PORT   = process.env.PORT || 5000;
 
 // Configure safe reverse proxy trust (do not blindly trust arbitrary forwarded headers)
 // If TRUST_PROXY is 'true', trust 1 upstream hop (e.g., Nginx, Cloudflare)
@@ -105,6 +109,26 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200,
 }));
+
+// ── Initialize Socket.IO Signaling Server ────────────────────────────────────
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST'],
+  },
+  pingInterval: 25000,
+  pingTimeout: 20000,
+});
+
+initSignaling(io);
 
 // Parse incoming JSON request bodies
 app.use(express.json());
@@ -313,20 +337,71 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ── Graceful Server Shutdown ──────────────────────────────────────────────────
+let isShuttingDown = false;
+
+function gracefulShutdown(signal, callback) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n[Server] Received ${signal || 'SHUTDOWN'}. Shutting down gracefully...`);
+
+  const done = (err) => {
+    if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
+      console.error('[Server] Error during shutdown:', err.message);
+      if (typeof callback === 'function') return callback(err);
+      process.exit(1);
+    }
+    console.log('[Server] HTTP and signaling servers closed cleanly.');
+    if (typeof callback === 'function') return callback(null);
+    process.exit(0);
+  };
+
+  // In Socket.IO v4, io.close() closes its attached HTTP server.
+  // We use one safe path to avoid redundant server.close() errors.
+  if (io) {
+    try {
+      io.close((err) => {
+        done(err);
+      });
+    } catch (err) {
+      done(err);
+    }
+  } else if (server && server.listening) {
+    server.close(done);
+  } else {
+    done(null);
+  }
+
+  // Force close after 5 seconds if connections fail to drain
+  setTimeout(() => {
+    console.error('[Server] Graceful shutdown timed out. Forcing process exit.');
+    if (typeof callback === 'function') return callback(new Error('Shutdown timed out'));
+    process.exit(1);
+  }, 5000).unref();
+}
+
 // ── Connect to MongoDB, then start listening ──────────────────────────────────
 // The server only opens its port AFTER the DB connection is established.
 // If the connection fails, the process exits so the problem is visible immediately.
-connectDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`\n🚀 VideoVerse API running at http://localhost:${PORT}`);
-      console.log(`   Health check : http://localhost:${PORT}/api/health`);
-      console.log(`   Videos list  : http://localhost:${PORT}/api/videos`);
-      console.log(`   Single video : http://localhost:${PORT}/api/videos/vid-001`);
-      console.log(`\n   Press Ctrl+C to stop.\n`);
+if (process.env.NODE_ENV !== 'test') {
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+  connectDB()
+    .then(() => {
+      server.listen(PORT, () => {
+        console.log(`\n🚀 VideoVerse API & Signaling running at http://localhost:${PORT}`);
+        console.log(`   Health check : http://localhost:${PORT}/api/health`);
+        console.log(`   Videos list  : http://localhost:${PORT}/api/videos`);
+        console.log(`   Single video : http://localhost:${PORT}/api/videos/vid-001`);
+        console.log(`   Socket.IO    : Enabled (WebRTC Signaling Gateway)`);
+        console.log(`\n   Press Ctrl+C to stop.\n`);
+      });
+    })
+    .catch((err) => {
+      console.error('❌ Failed to connect to MongoDB. Server will not start.', err.message);
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error('❌ Failed to connect to MongoDB. Server will not start.', err.message);
-    process.exit(1);
-  });
+}
+
+module.exports = { app, server, io, gracefulShutdown };
