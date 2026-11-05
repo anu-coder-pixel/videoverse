@@ -25,6 +25,7 @@ const authRoutes   = require('./routes/auth');
 const commentRoutes = require('./routes/comments');
 const downloadRoutes = require('./routes/downloads');
 const paymentRoutes = require('./routes/payments');
+const callRoutes    = require('./routes/calls');
 const { initSignaling } = require('./socket/signaling');
 
 // ── Static data (not yet migrated to DB) ──────────────────────────────────────
@@ -147,6 +148,9 @@ app.use('/api', downloadRoutes);
 
 // ── Mount Payment Routes (Task 3: Razorpay Subscriptions) ────────────────────
 app.use('/api', paymentRoutes);
+
+// ── Mount Video Call Routes (Phase 6.3.1: Dynamic TURN Credentials) ──────────
+app.use('/api/calls', callRoutes);
 
 // ── Helper: parse view strings like "1.2M" → 1200000 ─────────────────────────
 // Used for in-process trending sort because views are stored as display strings.
