@@ -48,6 +48,102 @@ export function getIceServers() {
   return iceServers;
 }
 
+/**
+ * Validates a single ICE server configuration object.
+ * Must be a non-null object with valid urls (non-empty string or non-empty array of strings).
+ */
+export function isValidIceServer(server) {
+  if (!server || typeof server !== 'object') return false;
+  if (!server.urls) return false;
+
+  if (typeof server.urls === 'string') {
+    if (!server.urls.trim()) return false;
+  } else if (Array.isArray(server.urls)) {
+    if (server.urls.length === 0) return false;
+    for (const url of server.urls) {
+      if (typeof url !== 'string' || !url.trim()) return false;
+    }
+  } else {
+    return false;
+  }
+
+  if (server.username !== undefined && typeof server.username !== 'string') return false;
+  if (server.credential !== undefined && typeof server.credential !== 'string') return false;
+
+  return true;
+}
+
+/**
+ * Validates an array of ICE servers.
+ * Must be a non-empty array where every element satisfies isValidIceServer.
+ */
+export function isValidIceServerList(servers) {
+  return Array.isArray(servers) && servers.length > 0 && servers.every(isValidIceServer);
+}
+
+/**
+ * Fetches dynamic ICE configuration from the authenticated backend endpoint.
+ *
+ * Security & Fallback Policy:
+ * - Sends HTTP-only cookie authentication (credentials: 'include').
+ * - Validates response schema thoroughly before returning.
+ * - Never logs credentials, tokens, or raw ICE configurations.
+ * - Non-sensitive warning logged on failure or invalid payload.
+ * - Gracefully falls back to default STUN configuration on network error or HTTP failure.
+ * - Bounded retry: Retries at most once before falling back to STUN.
+ */
+export async function fetchIceServers({
+  endpoint = '/api/calls/ice-servers',
+  fetchFn = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : globalThis.fetch,
+  maxRetries = 1,
+  showToast = null,
+} = {}) {
+  let attempts = 0;
+  while (attempts <= maxRetries) {
+    attempts++;
+    try {
+      if (typeof fetchFn !== 'function') {
+        throw new Error('Fetch API is not available');
+      }
+
+      const res = await fetchFn(endpoint, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && isValidIceServerList(data.iceServers)) {
+          return data.iceServers;
+        }
+        console.warn('[WebRTC] Invalid ICE server payload received from backend. Falling back to public STUN.');
+        break; // Schema mismatch: bounded break, no retry
+      }
+
+      console.warn(`[WebRTC] ICE server endpoint responded with HTTP ${res.status}.`);
+      if (attempts <= maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        continue;
+      }
+    } catch (err) {
+      console.warn(`[WebRTC] Failed to fetch dynamic ICE configuration (attempt ${attempts}/${maxRetries + 1}):`, err?.message || 'Network error');
+      if (attempts <= maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        continue;
+      }
+    }
+  }
+
+  console.warn('[WebRTC] Falling back to default public STUN configuration.');
+  if (typeof showToast === 'function') {
+    showToast('Using fallback connection server', 'warning');
+  }
+  return getIceServers();
+}
+
 // ── Media Constraints ─────────────────────────────────────────────────────────
 export const HIGH_RES_CONSTRAINTS = {
   audio: {
@@ -106,6 +202,12 @@ export function useWebRTC({
   const earlyCandidatesRef = useRef([]);
   const isMakingOfferRef = useRef(false);
   const isInitiatingMediaRef = useRef(false);
+
+  // Dynamic ICE server resolution and call lifecycle guards
+  const isCallActiveRef = useRef(false);
+  const callGenerationRef = useRef(0);
+  const iceServersRef = useRef(null);
+  const iceFetchPromiseRef = useRef(null);
 
   // ── 1. Acquire Local Media Stream ───────────────────────────────────────────
   const startMedia = useCallback(async () => {
@@ -196,8 +298,44 @@ export function useWebRTC({
     }
   }, []);
 
+  // ── Dynamic ICE Configuration Fetcher ──────────────────────────────────────
+  const getOrFetchIceServers = useCallback(async (sessionGen = callGenerationRef.current) => {
+    // If already resolved for the active session, return immediately
+    if (iceServersRef.current && isValidIceServerList(iceServersRef.current)) {
+      return iceServersRef.current;
+    }
+
+    // Reuse in-flight promise to prevent duplicate concurrent network requests
+    if (!iceFetchPromiseRef.current) {
+      const fetchPromise = fetchIceServers({ showToast })
+        .then((servers) => {
+          // Stale check: apply to shared ref only if generation still matches and call is active
+          if (callGenerationRef.current === sessionGen && isCallActiveRef.current) {
+            iceServersRef.current = servers;
+          }
+          return servers;
+        })
+        .finally(() => {
+          // Stale check: clear cache only if it matches this exact promise and generation is still current
+          if (iceFetchPromiseRef.current === fetchPromise && callGenerationRef.current === sessionGen) {
+            iceFetchPromiseRef.current = null;
+          }
+        });
+
+      iceFetchPromiseRef.current = fetchPromise;
+    }
+
+    return iceFetchPromiseRef.current;
+  }, [showToast]);
+
   // ── 3. Teardown & Resource Cleanup ──────────────────────────────────────────
   const cleanup = useCallback(() => {
+    // Invalidate active call status and increment generation immediately to block in-flight async callbacks
+    callGenerationRef.current++;
+    isCallActiveRef.current = false;
+    iceServersRef.current = null;
+    iceFetchPromiseRef.current = null;
+
     // 1. Stop all tracks on local stream
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
@@ -244,17 +382,40 @@ export function useWebRTC({
   }, []);
 
   // ── 4. Initialize RTCPeerConnection ─────────────────────────────────────────
-  const initPeerConnection = useCallback((mediaStream) => {
+  const initPeerConnection = useCallback(async (mediaStream, expectedGen = callGenerationRef.current) => {
+    const currentGen = expectedGen || callGenerationRef.current;
+
     if (pcRef.current) return pcRef.current;
+    if (!isCallActiveRef.current || callGenerationRef.current !== currentGen) return null;
     if (typeof RTCPeerConnection === 'undefined') {
       setMediaError('WebRTC RTCPeerConnection is not supported by your browser.');
       return null;
     }
 
+    // Await validated ICE servers (dynamic TURN/STUN or safe fallback) with generation tracking
+    const iceServers = await getOrFetchIceServers(currentGen);
+
+    // Guard: Prevent stale async responses from creating connections after call ended or new call started
+    if (!isCallActiveRef.current || callGenerationRef.current !== currentGen) {
+      return null;
+    }
+    if (pcRef.current) return pcRef.current;
+
     const pc = new RTCPeerConnection({
-      iceServers: getIceServers(),
+      iceServers: isValidIceServerList(iceServers) ? iceServers : getIceServers(),
       iceCandidatePoolSize: 10,
     });
+
+    // Guard again before mutating pcRef.current
+    if (!isCallActiveRef.current || callGenerationRef.current !== currentGen) {
+      try {
+        pc.close();
+      } catch {
+        // Ignore
+      }
+      return null;
+    }
+
     pcRef.current = pc;
 
     // Attach local media tracks
@@ -282,7 +443,7 @@ export function useWebRTC({
       }
     };
 
-    // Forward ICE candidates to signaling server
+    // Forward ICE candidates to signaling server (including end-of-candidates notification)
     pc.onicecandidate = (event) => {
       if (!socket || !roomId) return;
       if (event.candidate) {
@@ -316,19 +477,27 @@ export function useWebRTC({
     };
 
     return pc;
-  }, [socket, roomId]);
+  }, [socket, roomId, getOrFetchIceServers]);
 
   // ── 5. Signaling Event Listeners (Offer, Answer, Candidate, Peers) ───────────
   useEffect(() => {
     if (!enabled || !socket || !roomId) return;
 
+    // Increment generation for the new call session
+    const sessionGen = ++callGenerationRef.current;
+    isCallActiveRef.current = true;
+
     // Local stream holder
     let activeStream = null;
+
+    // Pre-fetch ICE configuration asynchronously in parallel with media acquisition
+    getOrFetchIceServers(sessionGen);
 
     // Named Signaling Handler: Creator initiates initial offer upon peer join
     const handlePeerJoined = async () => {
       if (!isCreator) return;
       if (isMakingOfferRef.current) return;
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
       try {
         isMakingOfferRef.current = true;
@@ -341,15 +510,24 @@ export function useWebRTC({
           activeStream = localStreamRef.current;
         }
 
-        const pc = pcRef.current || initPeerConnection(activeStream);
-        if (!pc) return;
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+        let pc = pcRef.current;
+        if (!pc) {
+          pc = await initPeerConnection(activeStream, sessionGen);
+        }
+        if (!pc || !isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
         const offer = await pc.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: true,
         });
 
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
         await pc.setLocalDescription(offer);
+
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
         socket.emit('offer', {
           roomId,
@@ -359,10 +537,14 @@ export function useWebRTC({
           },
         });
       } catch (err) {
-        console.error('[WebRTC] Failed to create or dispatch offer:', err);
-        setConnectionState('failed');
+        if (callGenerationRef.current === sessionGen && isCallActiveRef.current) {
+          console.error('[WebRTC] Failed to create or dispatch offer:', err);
+          setConnectionState('failed');
+        }
       } finally {
-        isMakingOfferRef.current = false;
+        if (callGenerationRef.current === sessionGen) {
+          isMakingOfferRef.current = false;
+        }
       }
     };
 
@@ -370,6 +552,7 @@ export function useWebRTC({
     const handleOffer = async (payload) => {
       const sdpData = payload?.sdp;
       if (!sdpData || sdpData.type !== 'offer') return;
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
       try {
         setConnectionState('connecting');
@@ -381,8 +564,13 @@ export function useWebRTC({
           activeStream = localStreamRef.current;
         }
 
-        const pc = pcRef.current || initPeerConnection(activeStream);
-        if (!pc) return;
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+        let pc = pcRef.current;
+        if (!pc) {
+          pc = await initPeerConnection(activeStream, sessionGen);
+        }
+        if (!pc || !isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
         // Anti-glare check: if already in non-stable state on caller side
         if (isCreator && pc.signalingState !== 'stable') {
@@ -391,10 +579,15 @@ export function useWebRTC({
         }
 
         await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
         await flushCandidateQueue();
 
         const answer = await pc.createAnswer();
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
         await pc.setLocalDescription(answer);
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
         socket.emit('answer', {
           roomId,
@@ -404,8 +597,10 @@ export function useWebRTC({
           },
         });
       } catch (err) {
-        console.error('[WebRTC] Failed to handle incoming offer:', err);
-        setConnectionState('failed');
+        if (callGenerationRef.current === sessionGen && isCallActiveRef.current) {
+          console.error('[WebRTC] Failed to handle incoming offer:', err);
+          setConnectionState('failed');
+        }
       }
     };
 
@@ -413,15 +608,19 @@ export function useWebRTC({
     const handleAnswer = async (payload) => {
       const sdpData = payload?.sdp;
       if (!sdpData || sdpData.type !== 'answer') return;
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
       const pc = pcRef.current;
       if (!pc) return;
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
+        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
         await flushCandidateQueue();
       } catch (err) {
-        console.error('[WebRTC] Failed to apply remote answer:', err);
+        if (callGenerationRef.current === sessionGen && isCallActiveRef.current) {
+          console.error('[WebRTC] Failed to apply remote answer:', err);
+        }
       }
     };
 
@@ -429,6 +628,7 @@ export function useWebRTC({
     const handleIceCandidate = async (payload) => {
       const cand = payload?.candidate;
       if (!cand || typeof cand.candidate !== 'string') return;
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
       const pc = pcRef.current;
       if (pc && pc.remoteDescription && pc.remoteDescription.type) {
@@ -445,6 +645,7 @@ export function useWebRTC({
 
     // Named Signaling Handler: Remote peer left room
     const handlePeerLeft = (data) => {
+      if (callGenerationRef.current !== sessionGen) return;
       setRemoteStream(null);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
@@ -463,9 +664,9 @@ export function useWebRTC({
     socket.on('peer-left', handlePeerLeft);
 
     // Initial media acquisition upon room enablement
-    startMedia().then((stream) => {
-      if (stream) {
-        initPeerConnection(stream);
+    startMedia().then(async (stream) => {
+      if (stream && isCallActiveRef.current && callGenerationRef.current === sessionGen) {
+        await initPeerConnection(stream, sessionGen);
       }
     });
 
@@ -488,6 +689,7 @@ export function useWebRTC({
     flushCandidateQueue,
     onPeerLeft,
     cleanup,
+    getOrFetchIceServers,
   ]);
 
   // Keep local video element source synchronized
