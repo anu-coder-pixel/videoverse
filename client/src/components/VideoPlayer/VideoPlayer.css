@@ -192,6 +192,7 @@
 
 /* ── Progress bar ── */
 .video-player__progress {
+  position: relative;
   cursor: pointer;
   padding: 6px 0;
 }
@@ -542,6 +543,62 @@
   margin-top: var(--space-1);
 }
 
+/* ── Phase 5.3: Resume Playback Toast ── */
+.video-player__resume-toast {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 14px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(108, 99, 255, 0.45);
+  border-radius: var(--radius-full);
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.video-player__resume-icon {
+  color: var(--color-brand-primary);
+  flex-shrink: 0;
+}
+
+/* ── Phase 5.3: Timeline Hover Preview Tooltip ── */
+.video-player__hover-preview {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 25;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  user-select: none;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.video-player__hover-time {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  display: block;
+  line-height: 1.2;
+}
+
 /* ── Responsive ── */
 @media (max-width: 480px) {
   .video-player__volume-slider { display: none; }
@@ -550,4 +607,6 @@
   .video-player__speed-menu { min-width: 125px; bottom: calc(100% + 6px); }
   .video-player__autoplay-thumb { width: 90px; }
   .video-player__autoplay-title { font-size: 12px; }
+  .video-player__resume-toast { font-size: 11px; padding: 4px 10px; top: var(--space-2); right: var(--space-2); }
+  .video-player__hover-preview { padding: 2px 6px; font-size: 11px; }
 }

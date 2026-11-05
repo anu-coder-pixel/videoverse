@@ -113,6 +113,7 @@ export default function WatchPage() {
             onToggleTheaterMode={() => setIsTheaterMode(t => !t)}
             nextVideo={nextVideo}
             onPlayNext={handlePlayNext}
+            onToast={showToast}
           />
         </div>
 

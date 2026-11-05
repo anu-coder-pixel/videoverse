@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Play, Pause, Volume2, VolumeX, Maximize, Settings,
+  Play, Pause, Volume2, VolumeX, Maximize,
   SkipBack, SkipForward, PictureInPicture2, AlertTriangle, RefreshCw, Loader2, Check,
-  RectangleHorizontal
+  RectangleHorizontal, Clock
 } from 'lucide-react';
 import { getThumbnailStyle } from '../../data/mockData';
 import './VideoPlayer.css';
@@ -29,10 +29,22 @@ import './VideoPlayer.css';
  * ✅ Full-width expansion preserving playback position & speed
  * ✅ Autoplay next video 5s countdown overlay with Play Now and Cancel
  * ✅ Automatic timer cleanup preventing duplicate timers or memory leaks
+ *
+ * Phase 5.3 Resume Playback & Timeline Hover Preview:
+ * ✅ LocalStorage playback position persistence key: videoverse_playback_positions
+ * ✅ Store by video ID: { "videoId": currentTime }
+ * ✅ Save progress periodically during playback and on pause/leaving video
+ * ✅ Minimum 5-second threshold and 95% completion exclusion
+ * ✅ Safe initial load resume without overwriting positions with zero
+ * ✅ Accessible resume toast ("Resumed from 02:35") with auto-fade
+ * ✅ Boundary-clamped timeline hover timestamp preview tooltip
+ * ✅ Mouse/pointer/touch hover tracking without altering playback position
+ * ✅ Cleared saved position on video finish (ended)
  */
 
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SPEED_STORAGE_KEY = 'videoverse_playback_speed';
+export const PLAYBACK_POSITIONS_STORAGE_KEY = 'videoverse_playback_positions';
 
 function getStoredPlaybackSpeed() {
   try {
@@ -61,12 +73,98 @@ function setStoredPlaybackSpeed(speed) {
   }
 }
 
+export function getStoredPlaybackPositions() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(PLAYBACK_POSITIONS_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to read playback positions from localStorage:', err);
+  }
+  return {};
+}
+
+export function getSavedPositionForVideo(videoId, duration) {
+  if (!videoId) return null;
+  const positions = getStoredPlaybackPositions();
+  const rawPos = positions[videoId];
+  if (typeof rawPos !== 'number' || isNaN(rawPos) || !isFinite(rawPos)) {
+    return null;
+  }
+  // Must be at least 5 seconds
+  if (rawPos < 5) return null;
+  // Must be strictly below 95% completion if duration is known
+  if (duration && duration > 0 && rawPos >= duration * 0.95) return null;
+  return rawPos;
+}
+
+export function saveVideoPosition(videoId, time, duration) {
+  if (!videoId || typeof time !== 'number' || isNaN(time) || !isFinite(time)) return;
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const positions = getStoredPlaybackPositions();
+
+    // Do not save positions below 5 seconds or >= 95% completion; clear if exists
+    if (time < 5 || (duration && duration > 0 && time >= duration * 0.95)) {
+      if (positions[videoId] !== undefined) {
+        delete positions[videoId];
+        window.localStorage.setItem(PLAYBACK_POSITIONS_STORAGE_KEY, JSON.stringify(positions));
+      }
+      return;
+    }
+
+    positions[videoId] = Math.round(time * 10) / 10;
+    window.localStorage.setItem(PLAYBACK_POSITIONS_STORAGE_KEY, JSON.stringify(positions));
+  } catch (err) {
+    console.warn('Unable to save playback position to localStorage:', err);
+  }
+}
+
+export function clearVideoPosition(videoId) {
+  if (!videoId) return;
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const positions = getStoredPlaybackPositions();
+    if (positions[videoId] !== undefined) {
+      delete positions[videoId];
+      window.localStorage.setItem(PLAYBACK_POSITIONS_STORAGE_KEY, JSON.stringify(positions));
+    }
+  } catch (err) {
+    console.warn('Unable to clear playback position from localStorage:', err);
+  }
+}
+
+export function formatResumeTime(seconds) {
+  if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) return '00:00';
+  const s = Math.floor(seconds);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const pad = (n) => String(n).padStart(2, '0');
+  if (h > 0) return `${h}:${pad(m % 60)}:${pad(s % 60)}`;
+  return `${pad(m)}:${pad(s % 60)}`;
+}
+
+export function calculateHoverDetails(clientX, rect, duration) {
+  if (!rect || rect.width <= 0) return { pct: 0, time: 0 };
+  const offsetX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  const pct = (offsetX / rect.width) * 100;
+  const maxDur = duration > 0 ? duration : 0;
+  const time = (pct / 100) * maxDur;
+  return { pct, time };
+}
+
 export default function VideoPlayer({
   video,
   isTheaterMode: externalTheaterMode,
   onToggleTheaterMode,
   nextVideo,
   onPlayNext,
+  onToast,
 }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
@@ -97,6 +195,17 @@ export default function VideoPlayer({
   const [autoplayCountdown, setAutoplayCountdown] = useState(5);
   const autoplayTimerRef = useRef(null);
   const countdownIntervalRef = useRef(null);
+
+  // Phase 5.3: Resume Playback state & refs
+  const [resumeToast, setResumeToast] = useState(null);
+  const resumeToastTimerRef = useRef(null);
+  const hasResumedRef = useRef(false);
+  const lastSaveTimestampRef = useRef(0);
+
+  // Phase 5.3: Timeline Hover Preview state
+  const [showHoverPreview, setShowHoverPreview] = useState(false);
+  const [hoverPct, setHoverPct] = useState(0);
+  const [hoverTimeSec, setHoverTimeSec] = useState(null);
 
   // Stream source & error handling
   const [currentSrc, setCurrentSrc] = useState(video.videoUrl);
@@ -157,13 +266,59 @@ export default function VideoPlayer({
     }, 5000);
   }, [nextVideo, onPlayNext]);
 
-  // Clean up autoplay timers on unmount
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
+      if (resumeToastTimerRef.current) clearTimeout(resumeToastTimerRef.current);
     };
   }, []);
+
+  const videoId = String(video?.id || video?._id || '');
+
+  // Helper to save current progress if valid
+  const saveCurrentProgress = useCallback(() => {
+    if (!hasResumedRef.current || !videoRef.current || !videoId) return;
+    const cur = videoRef.current.currentTime;
+    const dur = videoRef.current.duration || durationSec;
+    saveVideoPosition(videoId, cur, dur);
+  }, [videoId, durationSec]);
+
+  // Save progress on tab/window close
+  useEffect(() => {
+    function handleBeforeUnload() {
+      saveCurrentProgress();
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [saveCurrentProgress]);
+
+  // Attempt resume playback position safely on video load
+  const attemptResume = useCallback((totalDuration) => {
+    if (hasResumedRef.current || !videoId) return;
+    hasResumedRef.current = true;
+
+    const savedPos = getSavedPositionForVideo(videoId, totalDuration);
+    if (savedPos !== null && savedPos >= 5) {
+      if (videoRef.current) {
+        videoRef.current.currentTime = savedPos;
+      }
+      setCurrentTimeSec(savedPos);
+      if (totalDuration > 0) {
+        setProgress((savedPos / totalDuration) * 100);
+      }
+      const formatted = formatResumeTime(savedPos);
+      const toastMsg = `Resumed from ${formatted}`;
+      setResumeToast(toastMsg);
+      if (onToast) onToast(toastMsg);
+      if (resumeToastTimerRef.current) clearTimeout(resumeToastTimerRef.current);
+      resumeToastTimerRef.current = setTimeout(() => {
+        setResumeToast(null);
+        resumeToastTimerRef.current = null;
+      }, 3500);
+    }
+  }, [videoId, onToast]);
 
   // Reset player when video prop changes
   useEffect(() => {
@@ -177,6 +332,13 @@ export default function VideoPlayer({
     setPlaying(false);
     setIsBuffering(false);
     setShowSpeedMenu(false);
+    setShowHoverPreview(false);
+    setResumeToast(null);
+    hasResumedRef.current = false;
+    if (resumeToastTimerRef.current) {
+      clearTimeout(resumeToastTimerRef.current);
+      resumeToastTimerRef.current = null;
+    }
     setDurationSec(parseDuration(video.duration) || 60);
 
     if (videoRef.current) {
@@ -184,7 +346,11 @@ export default function VideoPlayer({
       videoRef.current.playbackRate = playbackSpeed;
       videoRef.current.load();
     }
-  }, [video.id, video.videoUrl, video.duration, playbackSpeed, cancelAutoplay]);
+
+    return () => {
+      saveCurrentProgress();
+    };
+  }, [video.id, video.videoUrl, video.duration, playbackSpeed, cancelAutoplay, saveCurrentProgress]);
 
   // Synchronize playback rate on video element whenever playbackSpeed changes
   useEffect(() => {
@@ -238,17 +404,39 @@ export default function VideoPlayer({
     const dur = videoRef.current.duration || durationSec || 1;
     setCurrentTimeSec(curr);
     setProgress((curr / dur) * 100);
-  }, [durationSec]);
+
+    // Periodically save playback progress during active playback (throttled to every 3.5s)
+    const now = Date.now();
+    if (hasResumedRef.current && playing && now - lastSaveTimestampRef.current >= 3500) {
+      lastSaveTimestampRef.current = now;
+      if (videoId) {
+        saveVideoPosition(videoId, curr, dur);
+      }
+    }
+  }, [durationSec, playing, videoId]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (!videoRef.current) return;
     const dur = videoRef.current.duration;
     if (dur && !isNaN(dur) && isFinite(dur)) {
       setDurationSec(dur);
+      attemptResume(dur);
+    } else {
+      attemptResume(durationSec);
     }
     videoRef.current.playbackRate = playbackSpeed;
     setHasError(false);
-  }, [playbackSpeed]);
+  }, [playbackSpeed, attemptResume, durationSec]);
+
+  const handleCanPlay = useCallback(() => {
+    setIsBuffering(false);
+    if (!hasResumedRef.current) {
+      const dur = videoRef.current?.duration || durationSec;
+      if (dur > 0) {
+        attemptResume(dur);
+      }
+    }
+  }, [attemptResume, durationSec]);
 
   const handleWaiting = () => setIsBuffering(true);
   const handlePlaying = () => {
@@ -256,10 +444,16 @@ export default function VideoPlayer({
     setPlaying(true);
     setHasError(false);
   };
-  const handlePause = () => setPlaying(false);
+  const handlePause = () => {
+    setPlaying(false);
+    saveCurrentProgress();
+  };
   const handleEnded = () => {
     setPlaying(false);
     setProgress(100);
+    if (videoId) {
+      clearVideoPosition(videoId);
+    }
     if (nextVideo && onPlayNext) {
       startAutoplayCountdown();
     }
@@ -315,6 +509,47 @@ export default function VideoPlayer({
     videoRef.current.currentTime = newTime;
     setProgress(pct);
     setCurrentTimeSec(newTime);
+  }
+
+  // Timeline Hover Preview handlers
+  const handleProgressHover = useCallback((clientX, currentTarget) => {
+    if (hasError || !currentTarget) return;
+    const rect = currentTarget.getBoundingClientRect();
+    const maxDur = (videoRef.current && !isNaN(videoRef.current.duration) && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+      ? videoRef.current.duration
+      : (durationSec || 0);
+
+    if (maxDur <= 0) {
+      setShowHoverPreview(false);
+      return;
+    }
+
+    const { pct, time } = calculateHoverDetails(clientX, rect, maxDur);
+    setHoverPct(pct);
+    setHoverTimeSec(time);
+    setShowHoverPreview(true);
+  }, [hasError, durationSec]);
+
+  function handleProgressMouseMove(e) {
+    handleProgressHover(e.clientX, e.currentTarget);
+  }
+
+  function handleProgressMouseEnter(e) {
+    handleProgressHover(e.clientX, e.currentTarget);
+  }
+
+  function handleProgressMouseLeave() {
+    setShowHoverPreview(false);
+  }
+
+  function handleProgressTouchMove(e) {
+    if (e.touches && e.touches[0]) {
+      handleProgressHover(e.touches[0].clientX, e.currentTarget);
+    }
+  }
+
+  function handleProgressTouchEnd() {
+    setShowHoverPreview(false);
   }
 
   function handleVolumeChange(e) {
@@ -491,6 +726,7 @@ export default function VideoPlayer({
         preload="metadata"
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
+        onCanPlay={handleCanPlay}
         onWaiting={handleWaiting}
         onPlaying={handlePlaying}
         onPause={handlePause}
@@ -526,6 +762,19 @@ export default function VideoPlayer({
           </span>
         )}
       </div>
+
+      {/* Phase 5.3: Resume Playback Toast */}
+      {resumeToast && (
+        <div
+          className="video-player__resume-toast animate-fade-in"
+          role="status"
+          aria-live="polite"
+          id="player-resume-toast"
+        >
+          <Clock size={14} className="video-player__resume-icon" aria-hidden="true" />
+          <span>{resumeToast}</span>
+        </div>
+      )}
 
       {/* Buffering Spinner */}
       {isBuffering && !hasError && (
@@ -653,10 +902,16 @@ export default function VideoPlayer({
         onClick={e => e.stopPropagation()}
         aria-label="Video controls"
       >
-        {/* Progress bar with interactive scrubbing */}
+        {/* Progress bar with interactive scrubbing & hover timestamp preview */}
         <div
           className="video-player__progress"
           onClick={handleProgressClick}
+          onMouseMove={handleProgressMouseMove}
+          onMouseEnter={handleProgressMouseEnter}
+          onMouseLeave={handleProgressMouseLeave}
+          onTouchMove={handleProgressTouchMove}
+          onTouchEnd={handleProgressTouchEnd}
+          onTouchCancel={handleProgressTouchEnd}
           role="slider"
           aria-label="Video progress scrubber"
           aria-valuenow={Math.round(progress)}
@@ -666,6 +921,17 @@ export default function VideoPlayer({
           tabIndex={0}
           id="video-progress-bar"
         >
+          {showHoverPreview && hoverTimeSec !== null && durationSec > 0 && !hasError && (
+            <div
+              className="video-player__hover-preview"
+              style={{ left: `clamp(28px, ${hoverPct}%, calc(100% - 28px))` }}
+              aria-hidden="true"
+              id="player-hover-preview"
+            >
+              <span className="video-player__hover-time">{formatTime(hoverTimeSec)}</span>
+            </div>
+          )}
+
           <div className="video-player__progress-track">
             <div
               className="video-player__progress-fill"
