@@ -215,7 +215,11 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
     "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "subtitles": [
+      { "src": "/subtitles/demo-en.vtt", "srclang": "en", "label": "English" },
+      { "src": "/subtitles/demo-es.vtt", "srclang": "es", "label": "Spanish" }
+    ]
   },
   {
     "id": "vid-002",

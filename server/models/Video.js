@@ -1,4 +1,4 @@
-﻿const mongoose = require("mongoose");
+const mongoose = require("mongoose");
 
 /**
  * VideoVerse — Mongoose Video Model
@@ -148,6 +148,20 @@ const VideoSchema = new mongoose.Schema(
     fallbackUrl: {
       type: String,
       default: "",
+    },
+
+    // Subtitle tracks array (optional, for Phase 5.4 captions)
+    // Structure: [{ src: String, srclang: String, label: String }]
+    subtitles: {
+      type: [
+        {
+          _id: false,
+          src: { type: String, required: true },
+          srclang: { type: String, required: true },
+          label: { type: String, required: true },
+        },
+      ],
+      default: [],
     },
   },
   {

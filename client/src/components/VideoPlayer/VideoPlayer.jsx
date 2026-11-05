@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play, Pause, Volume2, VolumeX, Maximize,
   SkipBack, SkipForward, PictureInPicture2, AlertTriangle, RefreshCw, Loader2, Check,
-  RectangleHorizontal, Clock
+  RectangleHorizontal, Clock, Subtitles
 } from 'lucide-react';
 import { getThumbnailStyle } from '../../data/mockData';
 import './VideoPlayer.css';
@@ -45,6 +45,58 @@ import './VideoPlayer.css';
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SPEED_STORAGE_KEY = 'videoverse_playback_speed';
 export const PLAYBACK_POSITIONS_STORAGE_KEY = 'videoverse_playback_positions';
+export const SUBTITLE_STORAGE_KEY = 'videoverse_subtitle_preference';
+
+export function isValidSubtitleTrack(track) {
+  if (!track || typeof track !== 'object') return false;
+  if (typeof track.src !== 'string' || typeof track.srclang !== 'string' || typeof track.label !== 'string') return false;
+  const src = track.src.trim();
+  const srclang = track.srclang.trim();
+  const label = track.label.trim();
+  if (!src || !srclang || !label) return false;
+
+  // Reject dangerous protocols: javascript:, data:, vbscript:, etc.
+  if (/^(javascript|data|vbscript):/i.test(src)) return false;
+
+  // Accept relative paths starting with /subtitles/
+  if (src.startsWith('/subtitles/')) return true;
+
+  // Accept HTTPS URLs only (reject insecure http://, ftp:, etc.)
+  try {
+    const url = new URL(src, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    return url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function getStoredSubtitlePreference() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const saved = window.localStorage.getItem(SUBTITLE_STORAGE_KEY);
+      if (saved && typeof saved === 'string') {
+        const trimmed = saved.trim();
+        if (trimmed && trimmed.length <= 40 && !/[\r\n<>]/.test(trimmed)) {
+          return trimmed;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to read subtitle preference from localStorage:', err);
+  }
+  return 'off';
+}
+
+export function setStoredSubtitlePreference(pref) {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const val = (typeof pref === 'string' && pref.trim()) ? pref.trim() : 'off';
+      window.localStorage.setItem(SUBTITLE_STORAGE_KEY, val);
+    }
+  } catch (err) {
+    console.warn('Unable to save subtitle preference to localStorage:', err);
+  }
+}
 
 function getStoredPlaybackSpeed() {
   try {
@@ -169,6 +221,7 @@ export default function VideoPlayer({
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const speedMenuRef = useRef(null);
+  const subtitleMenuRef = useRef(null);
   const hideControlsTimer = useRef(null);
 
   // Playback state
@@ -206,6 +259,25 @@ export default function VideoPlayer({
   const [showHoverPreview, setShowHoverPreview] = useState(false);
   const [hoverPct, setHoverPct] = useState(0);
   const [hoverTimeSec, setHoverTimeSec] = useState(null);
+
+  // Phase 5.4: Subtitle & Caption state
+  const [subtitlePreference, setSubtitlePreference] = useState(() => getStoredSubtitlePreference());
+  const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
+  const [failedTracks, setFailedTracks] = useState(new Set());
+
+  // Filter valid subtitle tracks from video metadata
+  const validSubtitles = Array.isArray(video?.subtitles)
+    ? video.subtitles.filter(isValidSubtitleTrack)
+    : [];
+
+  // Available (unfailed) subtitle tracks
+  const availableSubtitles = validSubtitles.filter(t => !failedTracks.has(t.src));
+  const hasSubtitles = availableSubtitles.length > 0;
+
+  // Resolved active subtitle language: preference if available in current video, otherwise 'off'
+  const activeSubtitleLang = (subtitlePreference !== 'off' && availableSubtitles.some(t => t.srclang === subtitlePreference))
+    ? subtitlePreference
+    : 'off';
 
   // Stream source & error handling
   const [currentSrc, setCurrentSrc] = useState(video.videoUrl);
@@ -332,8 +404,10 @@ export default function VideoPlayer({
     setPlaying(false);
     setIsBuffering(false);
     setShowSpeedMenu(false);
+    setShowSubtitleMenu(false);
     setShowHoverPreview(false);
     setResumeToast(null);
+    setFailedTracks(new Set());
     hasResumedRef.current = false;
     if (resumeToastTimerRef.current) {
       clearTimeout(resumeToastTimerRef.current);
@@ -359,16 +433,16 @@ export default function VideoPlayer({
     }
   }, [playbackSpeed, currentSrc]);
 
-  // Auto-hide controls when playing (paused while speed menu is open)
+  // Auto-hide controls when playing (paused while speed or subtitle menu is open)
   useEffect(() => {
-    if (playing && !showSpeedMenu) {
+    if (playing && !showSpeedMenu && !showSubtitleMenu) {
       resetHideTimer();
     } else {
       clearTimeout(hideControlsTimer.current);
       setShowControls(true);
     }
     return () => clearTimeout(hideControlsTimer.current);
-  }, [playing, showSpeedMenu]);
+  }, [playing, showSpeedMenu, showSubtitleMenu]);
 
   // Close speed menu when clicking outside
   useEffect(() => {
@@ -384,6 +458,77 @@ export default function VideoPlayer({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showSpeedMenu]);
+
+  // Close subtitle menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (subtitleMenuRef.current && !subtitleMenuRef.current.contains(event.target)) {
+        setShowSubtitleMenu(false);
+      }
+    }
+    if (showSubtitleMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSubtitleMenu]);
+
+  // Apply active subtitle track on HTML5 video element without disrupting playback
+  const applySubtitleTrack = useCallback((targetLang) => {
+    if (!videoRef.current || !videoRef.current.textTracks) return;
+    const tracks = videoRef.current.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i];
+      if (targetLang !== 'off' && (track.language === targetLang || track.label === targetLang)) {
+        track.mode = 'showing';
+      } else {
+        track.mode = 'disabled';
+      }
+    }
+  }, []);
+
+  // Sync subtitle tracks when active language or source changes
+  useEffect(() => {
+    applySubtitleTrack(activeSubtitleLang);
+  }, [activeSubtitleLang, applySubtitleTrack, currentSrc]);
+
+  const handleSelectSubtitle = useCallback((lang) => {
+    setSubtitlePreference(lang);
+    setStoredSubtitlePreference(lang);
+    applySubtitleTrack(lang);
+    setShowSubtitleMenu(false);
+  }, [applySubtitleTrack]);
+
+  const toggleSubtitlesShortcut = useCallback(() => {
+    if (availableSubtitles.length === 0) return;
+    if (activeSubtitleLang === 'off') {
+      const preferred = availableSubtitles.find(t => t.srclang === subtitlePreference);
+      const nextLang = preferred ? preferred.srclang : availableSubtitles[0].srclang;
+      handleSelectSubtitle(nextLang);
+    } else {
+      handleSelectSubtitle('off');
+    }
+  }, [availableSubtitles, activeSubtitleLang, subtitlePreference, handleSelectSubtitle]);
+
+  const handleTrackError = useCallback((failedTrack) => {
+    console.warn(`Subtitle track failed to load: ${failedTrack?.src}`);
+    if (!failedTrack?.src) return;
+    setFailedTracks(prev => {
+      const next = new Set(prev);
+      next.add(failedTrack.src);
+      return next;
+    });
+
+    if (activeSubtitleLang === failedTrack.srclang) {
+      applySubtitleTrack('off');
+      setSubtitlePreference('off');
+      setStoredSubtitlePreference('off');
+      if (onToast) {
+        onToast('Subtitles unavailable for this track');
+      }
+    }
+  }, [activeSubtitleLang, applySubtitleTrack, onToast]);
 
   function resetHideTimer() {
     clearTimeout(hideControlsTimer.current);
@@ -425,8 +570,9 @@ export default function VideoPlayer({
       attemptResume(durationSec);
     }
     videoRef.current.playbackRate = playbackSpeed;
+    applySubtitleTrack(activeSubtitleLang);
     setHasError(false);
-  }, [playbackSpeed, attemptResume, durationSec]);
+  }, [playbackSpeed, attemptResume, durationSec, applySubtitleTrack, activeSubtitleLang]);
 
   const handleCanPlay = useCallback(() => {
     setIsBuffering(false);
@@ -624,14 +770,21 @@ export default function VideoPlayer({
   }
 
   function handleKeyDown(e) {
-    // If typing in input, textarea, or contentEditable element, don't trigger shortcuts
-    if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName) || e.target?.isContentEditable) return;
+    // If typing in input, textarea, select, or contentEditable element, don't trigger shortcuts
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName) || e.target?.isContentEditable) return;
 
-    // If speed menu is open, handle Escape or allow clicking/navigating menu
+    // If speed or subtitle menu is open, handle Escape or allow clicking/navigating menu
     if (e.target && e.target.closest && e.target.closest('.video-player__speed-menu')) {
       if (e.key === 'Escape') {
         e.preventDefault();
         setShowSpeedMenu(false);
+      }
+      return;
+    }
+    if (e.target && e.target.closest && e.target.closest('.video-player__subtitle-menu')) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSubtitleMenu(false);
       }
       return;
     }
@@ -651,6 +804,11 @@ export default function VideoPlayer({
       handleToggleTheater();
       return;
     }
+    if (e.key === 'c' || e.key === 'C') {
+      e.preventDefault();
+      toggleSubtitlesShortcut();
+      return;
+    }
     if (e.key === 'ArrowLeft' || e.key === 'j' || e.key === 'J') { e.preventDefault(); skipSeconds(-10); }
     if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') { e.preventDefault(); skipSeconds(10); }
     if (e.key === 'ArrowUp') {
@@ -665,9 +823,10 @@ export default function VideoPlayer({
       setVolume(nextVol);
       if (videoRef.current) videoRef.current.volume = nextVol / 100;
     }
-    if (e.key === 'Escape' && showSpeedMenu) {
+    if (e.key === 'Escape' && (showSpeedMenu || showSubtitleMenu)) {
       e.preventDefault();
       setShowSpeedMenu(false);
+      setShowSubtitleMenu(false);
     }
   }
 
@@ -734,7 +893,18 @@ export default function VideoPlayer({
         onError={handleVideoError}
         className="video-player__media"
         aria-hidden="true"
-      />
+      >
+        {validSubtitles.map((track) => (
+          <track
+            key={`${track.srclang}-${track.src}`}
+            kind="subtitles"
+            src={track.src}
+            srcLang={track.srclang}
+            label={track.label}
+            onError={() => handleTrackError(track)}
+          />
+        ))}
+      </video>
 
       {/* Surface Gradient / Poster background if not loaded or fallback */}
       <div
@@ -1024,6 +1194,83 @@ export default function VideoPlayer({
 
           {/* Right controls */}
           <div className="video-player__right">
+            {/* Subtitles (Closed Captions) Control */}
+            <div className="video-player__subtitle-wrapper" ref={subtitleMenuRef}>
+              <button
+                type="button"
+                className={`video-player__btn video-player__subtitle-btn ${activeSubtitleLang !== 'off' ? 'video-player__btn--active' : ''} ${!hasSubtitles ? 'video-player__btn--disabled' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!hasSubtitles) return;
+                  setShowSubtitleMenu(prev => !prev);
+                }}
+                disabled={!hasSubtitles}
+                aria-label={
+                  !hasSubtitles
+                    ? 'No subtitles available'
+                    : activeSubtitleLang === 'off'
+                      ? 'Subtitles (Captions) Off (C)'
+                      : `Subtitles: ${availableSubtitles.find(t => t.srclang === activeSubtitleLang)?.label || activeSubtitleLang} (C)`
+                }
+                aria-haspopup="true"
+                aria-expanded={showSubtitleMenu}
+                aria-pressed={activeSubtitleLang !== 'off'}
+                title={
+                  !hasSubtitles
+                    ? 'No subtitles available'
+                    : activeSubtitleLang === 'off'
+                      ? 'Turn on subtitles (C)'
+                      : 'Subtitles settings (C)'
+                }
+                id="player-subtitles-btn"
+              >
+                <Subtitles size={17} />
+              </button>
+
+              {showSubtitleMenu && hasSubtitles && (
+                <div
+                  className="video-player__subtitle-menu animate-fade-in"
+                  role="menu"
+                  aria-label="Subtitle and Closed Caption options"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="video-player__subtitle-header">Subtitles / CC</div>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={activeSubtitleLang === 'off'}
+                    className={`video-player__subtitle-item ${activeSubtitleLang === 'off' ? 'video-player__subtitle-item--active' : ''}`}
+                    onClick={() => handleSelectSubtitle('off')}
+                    id="player-subtitle-opt-off"
+                  >
+                    <span className="video-player__subtitle-check">
+                      {activeSubtitleLang === 'off' ? <Check size={14} /> : null}
+                    </span>
+                    <span className="video-player__subtitle-text">Off</span>
+                  </button>
+                  {availableSubtitles.map((track) => {
+                    const isSelected = activeSubtitleLang === track.srclang;
+                    return (
+                      <button
+                        key={track.srclang}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isSelected}
+                        className={`video-player__subtitle-item ${isSelected ? 'video-player__subtitle-item--active' : ''}`}
+                        onClick={() => handleSelectSubtitle(track.srclang)}
+                        id={`player-subtitle-opt-${track.srclang}`}
+                      >
+                        <span className="video-player__subtitle-check">
+                          {isSelected ? <Check size={14} /> : null}
+                        </span>
+                        <span className="video-player__subtitle-text">{track.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Playback Speed Selector */}
             <div className="video-player__speed-wrapper" ref={speedMenuRef}>
               <button
