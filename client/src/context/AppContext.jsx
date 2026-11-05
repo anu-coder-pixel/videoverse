@@ -22,7 +22,20 @@ export const STORAGE_KEYS = {
   CURRENT_VIDEO_ID: 'videoverse_current_video_id',
   CURRENT_PAGE: 'videoverse_current_page',
   THEME_PREFERENCE: 'videoverse_theme_preference',
+  CALL_ROOM_ID: 'videoverse_call_room_id',
 };
+
+// ── Room Identifier Format Validation ─────────────────────────────────────────
+export const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{6,64}$/;
+
+export function isValidRoomId(roomId) {
+  if (typeof roomId !== 'string') return false;
+  const trimmed = roomId.trim();
+  if (!ROOM_ID_REGEX.test(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
+  if (['default', 'admin', 'null', 'undefined', 'room'].includes(lower)) return false;
+  return true;
+}
 
 /**
  * Calculates current theme based on Indian Standard Time (UTC+05:30).
@@ -132,23 +145,39 @@ function saveArrayToStorage(key, array) {
  */
 function getInitialNavigationState() {
   if (typeof window === 'undefined') {
-    return { page: 'home', video: null };
+    return { page: 'home', video: null, callRoomId: null };
   }
   try {
     const params = new URLSearchParams(window.location.search);
+    const callParam = params.get('call');
+    if (callParam !== null) {
+      const trimmed = callParam.trim();
+      if (trimmed === '') {
+        return { page: 'call', video: null, callRoomId: null };
+      }
+      if (isValidRoomId(trimmed)) {
+        return { page: 'call', video: null, callRoomId: trimmed };
+      }
+      return { page: 'call', video: null, callRoomId: trimmed, invalidRoomId: true };
+    }
+
     const watchId = params.get('watch') || params.get('v') ||
       (localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE) === 'watch' ? localStorage.getItem(STORAGE_KEYS.CURRENT_VIDEO_ID) : null);
 
     if (watchId) {
       const found = MOCK_VIDEOS.find(v => v.id === watchId);
       if (found) {
-        return { page: 'watch', video: found };
+        return { page: 'watch', video: found, callRoomId: null };
       }
+    }
+
+    if (localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE) === 'call') {
+      return { page: 'call', video: null, callRoomId: null };
     }
   } catch (err) {
     console.warn('[VideoVerse] Failed to determine initial navigation state:', err);
   }
-  return { page: 'home', video: null };
+  return { page: 'home', video: null, callRoomId: null };
 }
 
 export function AppProvider({ children }) {
@@ -157,8 +186,9 @@ export function AppProvider({ children }) {
 
   // ── Navigation state with refresh/reopen persistence ────────────────────
   const initialNav = getInitialNavigationState();
-  const [currentPage, setCurrentPage] = useState(initialNav.page); // 'home' | 'watch'
+  const [currentPage, setCurrentPage] = useState(initialNav.page); // 'home' | 'watch' | 'call'
   const [selectedVideo, setSelectedVideo] = useState(initialNav.video);
+  const [callRoomId, setCallRoomId] = useState(initialNav.callRoomId || null);
 
   // Sync selectedVideo with live API dataset once videos finish loading
   useEffect(() => {
@@ -174,16 +204,27 @@ export function AppProvider({ children }) {
   useEffect(() => {
     function handlePopState() {
       const params = new URLSearchParams(window.location.search);
+      const callParam = params.get('call');
+      if (callParam !== null) {
+        const trimmed = callParam.trim();
+        setSelectedVideo(null);
+        setCurrentPage('call');
+        setCallRoomId(trimmed || null);
+        return;
+      }
+
       const watchId = params.get('watch') || params.get('v');
       if (watchId) {
         const pool = (Array.isArray(videos) && videos.length > 0) ? videos : MOCK_VIDEOS;
         const found = pool.find(v => v.id === watchId);
         if (found) {
+          setCallRoomId(null);
           setSelectedVideo(found);
           setCurrentPage('watch');
           return;
         }
       }
+      setCallRoomId(null);
       setSelectedVideo(null);
       setCurrentPage('home');
     }
@@ -543,6 +584,7 @@ export function AppProvider({ children }) {
     if (!video) return;
     setSelectedVideo(video);
     setCurrentPage('watch');
+    setCallRoomId(null);
 
     // Persist current page & video for refresh/reopen
     try {
@@ -551,6 +593,7 @@ export function AppProvider({ children }) {
       const url = new URL(window.location.href);
       url.searchParams.set('watch', video.id);
       url.searchParams.delete('v');
+      url.searchParams.delete('call');
       window.history.pushState({ page: 'watch', videoId: video.id }, '', url.toString());
     } catch {
       // Safe fallback
@@ -579,6 +622,7 @@ export function AppProvider({ children }) {
   const navigateToHome = useCallback(() => {
     setCurrentPage('home');
     setSelectedVideo(null);
+    setCallRoomId(null);
 
     // Clear current watch page from URL & storage
     try {
@@ -587,7 +631,33 @@ export function AppProvider({ children }) {
       const url = new URL(window.location.href);
       url.searchParams.delete('watch');
       url.searchParams.delete('v');
+      url.searchParams.delete('call');
       window.history.pushState({ page: 'home' }, '', url.pathname + (url.search ? url.search : ''));
+    } catch {
+      // Safe fallback
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const navigateToCall = useCallback((roomId = null) => {
+    setCurrentPage('call');
+    setSelectedVideo(null);
+    const validRoom = (typeof roomId === 'string' && isValidRoomId(roomId)) ? roomId.trim() : null;
+    setCallRoomId(validRoom);
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_PAGE, 'call');
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_VIDEO_ID);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('watch');
+      url.searchParams.delete('v');
+      if (validRoom) {
+        url.searchParams.set('call', validRoom);
+      } else {
+        url.searchParams.set('call', '');
+      }
+      window.history.pushState({ page: 'call', callRoomId: validRoom }, '', url.pathname + url.search);
     } catch {
       // Safe fallback
     }
@@ -647,6 +717,9 @@ export function AppProvider({ children }) {
         setActiveChannelFilter(null);
         navigateToHome();
         break;
+      case 'call':
+        navigateToCall();
+        break;
       default: {
         const catName = itemId.charAt(0).toUpperCase() + itemId.slice(1);
         setCurrentView('all');
@@ -656,7 +729,7 @@ export function AppProvider({ children }) {
         break;
       }
     }
-  }, [navigateToHome, showToast]);
+  }, [navigateToHome, navigateToCall, showToast]);
 
   const filterByChannel = useCallback((channelId) => {
     setActiveChannelFilter(channelId);
@@ -1121,6 +1194,10 @@ export function AppProvider({ children }) {
     selectedVideo,
     navigateToWatch,
     navigateToHome,
+    navigateToCall,
+    callRoomId,
+    setCallRoomId,
+    isValidRoomId,
 
     // Views & Filters
     currentView,

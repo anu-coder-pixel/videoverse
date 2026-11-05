@@ -692,6 +692,44 @@ router.get('/me', requireAuth, (req, res) => {
   });
 });
 
+/**
+ * GET /api/auth/users
+ * Retrieves sanitized list of registered users for the video call contacts selector.
+ * Excludes the currently authenticated user.
+ * Returns only: id, name, email, avatar, avatarColor, initials.
+ * Never returns passwords, password hashes, JWTs, OTPs, devices, or security fields.
+ */
+router.get('/users', requireAuth, async (req, res) => {
+  try {
+    const currentUserId = req.user._id;
+    const users = await User.find(
+      { _id: { $ne: currentUserId } },
+      '_id name email avatar avatarColor initials'
+    ).lean();
+
+    const sanitized = users.map((u) => ({
+      id: u._id.toString(),
+      name: u.name,
+      email: u.email,
+      avatar: u.avatar || '',
+      avatarColor: u.avatarColor || '#6366f1',
+      initials: u.initials || (u.name ? u.name.slice(0, 2).toUpperCase() : 'U'),
+    }));
+
+    return res.status(200).json({
+      success: true,
+      users: sanitized,
+    });
+  } catch (err) {
+    console.error('[auth/users] Database error fetching contacts:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'SERVER_ERROR',
+      message: 'Failed to fetch registered contacts.',
+    });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Authenticated User Activity Synchronization Endpoints
 // (Directly reads and writes to MongoDB)

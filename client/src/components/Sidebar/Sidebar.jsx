@@ -2,7 +2,7 @@ import {
   Home, TrendingUp, PlaySquare, History, Clock, ThumbsUp,
   Download, Music, Gamepad2, Atom, BookOpen, ChevronRight,
   ChevronLeft, Laptop, Compass, Utensils, Trophy, Film,
-  Globe, Smile, Newspaper, Dumbbell, User, Sparkles, Shield
+  Globe, Smile, Newspaper, Dumbbell, User, Sparkles, Shield, Video
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { SIDEBAR_SECTIONS, MOCK_CHANNELS } from '../../data/mockData';
@@ -18,6 +18,7 @@ const ICON_MAP = {
   ThumbsUp,
   Download,
   Shield,
+  Video,
   Laptop,
   Gamepad2,
   Music,
@@ -40,6 +41,7 @@ const MINI_NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'trending', label: 'Trending', icon: TrendingUp },
   { id: 'subscriptions', label: 'Subscriptions', icon: PlaySquare },
+  { id: 'call', label: 'Call', icon: Video },
   { id: 'history', label: 'You', icon: History },
   { id: 'upgrade', label: 'Upgrade', icon: Sparkles },
 ];
@@ -50,6 +52,7 @@ export default function Sidebar() {
     sidebarCollapsed,
     toggleSidebarCollapse,
     toggleSidebar,
+    currentPage,
     currentView,
     activeCategory,
     activeChannelFilter,
@@ -66,7 +69,8 @@ export default function Sidebar() {
 
   function isItemActive(itemId) {
     if (activeChannelFilter) return false;
-    if (itemId === 'home') return currentView === 'all' && activeCategory === 'All';
+    if (itemId === 'call') return currentPage === 'call';
+    if (itemId === 'home') return currentPage === 'home' && currentView === 'all' && activeCategory === 'All';
     if (itemId === 'trending') return currentView === 'trending';
     if (itemId === 'subscriptions') return currentView === 'subscriptions';
     if (itemId === 'history') return currentView === 'history';

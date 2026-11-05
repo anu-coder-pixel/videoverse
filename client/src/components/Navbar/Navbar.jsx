@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Menu, Bell, Upload, User, X, Mic, ArrowLeft, LogOut, Settings, Zap, Crown, Star, Shield, Sun, Moon } from 'lucide-react';
+import { Search, Menu, Bell, Upload, User, X, Mic, ArrowLeft, LogOut, Settings, Zap, Crown, Star, Shield, Sun, Moon, Video } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import './Navbar.css';
 
@@ -19,6 +19,8 @@ export default function Navbar() {
     theme,
     themePreference,
     updateThemePreference,
+    currentPage,
+    navigateToCall,
   } = useApp();
   const [searchFocused, setSearchFocused] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -217,6 +219,17 @@ export default function Navbar() {
               <span className="navbar__create-label">Create</span>
             </button>
 
+            {/* Video Call Quick Launch */}
+            <button
+              className={`navbar__icon-btn ${currentPage === 'call' ? 'active' : ''}`}
+              aria-label="Video Call"
+              title="Start or Join Video Call"
+              onClick={() => navigateToCall()}
+              id="navbar-video-call-btn"
+            >
+              <Video size={18} />
+            </button>
+
             {/* Notifications */}
             <div className="navbar__notif-wrapper">
               <button
@@ -351,6 +364,21 @@ export default function Navbar() {
                     >
                       <Shield size={16} />
                       <span>Security & Devices</span>
+                    </button>
+
+                    {/* Video Call (Task 6) */}
+                    <button
+                      type="button"
+                      className="navbar__dropdown-item"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        navigateToCall();
+                      }}
+                      role="menuitem"
+                      id="navbar-dropdown-call-btn"
+                    >
+                      <Video size={16} />
+                      <span>Video Call</span>
                     </button>
 
                     {/* Interactive Appearance Toggle (Task 4) */}

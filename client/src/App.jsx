@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar/Sidebar';
 import AuthModal from './components/AuthModal/AuthModal';
 import HomePage from './pages/HomePage/HomePage';
 import WatchPage from './pages/WatchPage/WatchPage';
+import CallPage from './pages/CallPage/CallPage';
 import './App.css';
 
 function AppInner() {
@@ -24,6 +25,7 @@ function AppInner() {
       >
         {currentPage === 'home' && <HomePage />}
         {currentPage === 'watch' && <WatchPage />}
+        {currentPage === 'call' && <CallPage />}
       </div>
 
       {/* Authentication Modal */}

@@ -2368,6 +2368,7 @@ export const SIDEBAR_SECTIONS = [
       { id: 'home', label: 'Home', icon: 'Home', path: '/' },
       { id: 'trending', label: 'Trending', icon: 'TrendingUp', path: '/trending' },
       { id: 'subscriptions', label: 'Subscriptions', icon: 'PlaySquare', path: '/subscriptions' },
+      { id: 'call', label: 'Video Call', icon: 'Video', path: '/call' },
     ],
   },
   {
