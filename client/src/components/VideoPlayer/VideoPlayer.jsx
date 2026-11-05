@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Settings,
-  SkipBack, SkipForward, PictureInPicture2, AlertTriangle, RefreshCw, Loader2, Check
+  SkipBack, SkipForward, PictureInPicture2, AlertTriangle, RefreshCw, Loader2, Check,
+  RectangleHorizontal
 } from 'lucide-react';
 import { getThumbnailStyle } from '../../data/mockData';
 import './VideoPlayer.css';
@@ -22,6 +23,12 @@ import './VideoPlayer.css';
  * ✅ Consistent 10-second seeking with buttons, Left/Right arrows, and J/L shortcuts
  * ✅ Seeking clamped safely between 0 and video duration
  * ✅ Clickable time display toggling between "current / total" and "current / -remaining"
+ *
+ * Phase 5.2 Theater Mode & Autoplay Next:
+ * ✅ Theater mode toggle button and 'T' keyboard shortcut
+ * ✅ Full-width expansion preserving playback position & speed
+ * ✅ Autoplay next video 5s countdown overlay with Play Now and Cancel
+ * ✅ Automatic timer cleanup preventing duplicate timers or memory leaks
  */
 
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -54,7 +61,13 @@ function setStoredPlaybackSpeed(speed) {
   }
 }
 
-export default function VideoPlayer({ video }) {
+export default function VideoPlayer({
+  video,
+  isTheaterMode: externalTheaterMode,
+  onToggleTheaterMode,
+  nextVideo,
+  onPlayNext,
+}) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const speedMenuRef = useRef(null);
@@ -76,14 +89,85 @@ export default function VideoPlayer({ video }) {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showRemainingTime, setShowRemainingTime] = useState(false);
 
+  // Phase 5.2: Theater Mode & Autoplay state
+  const [internalTheaterMode, setInternalTheaterMode] = useState(false);
+  const isTheaterMode = externalTheaterMode !== undefined ? externalTheaterMode : internalTheaterMode;
+
+  const [autoplayActive, setAutoplayActive] = useState(false);
+  const [autoplayCountdown, setAutoplayCountdown] = useState(5);
+  const autoplayTimerRef = useRef(null);
+  const countdownIntervalRef = useRef(null);
+
   // Stream source & error handling
   const [currentSrc, setCurrentSrc] = useState(video.videoUrl);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isUsingFallback, setIsUsingFallback] = useState(false);
 
+  function handleToggleTheater() {
+    if (onToggleTheaterMode) {
+      onToggleTheaterMode();
+    } else {
+      setInternalTheaterMode(prev => !prev);
+    }
+  }
+
+  const cancelAutoplay = useCallback(() => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    if (autoplayTimerRef.current) {
+      clearTimeout(autoplayTimerRef.current);
+      autoplayTimerRef.current = null;
+    }
+    setAutoplayActive(false);
+    setAutoplayCountdown(5);
+  }, []);
+
+  const playNextNow = useCallback(() => {
+    cancelAutoplay();
+    if (onPlayNext && nextVideo) {
+      onPlayNext();
+    }
+  }, [cancelAutoplay, onPlayNext, nextVideo]);
+
+  const startAutoplayCountdown = useCallback(() => {
+    if (!nextVideo || !onPlayNext) return;
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
+
+    setAutoplayCountdown(5);
+    setAutoplayActive(true);
+
+    let remaining = 5;
+    countdownIntervalRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+      setAutoplayCountdown(Math.max(0, remaining));
+    }, 1000);
+
+    autoplayTimerRef.current = setTimeout(() => {
+      autoplayTimerRef.current = null;
+      setAutoplayActive(false);
+      onPlayNext();
+    }, 5000);
+  }, [nextVideo, onPlayNext]);
+
+  // Clean up autoplay timers on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
+    };
+  }, []);
+
   // Reset player when video prop changes
   useEffect(() => {
+    cancelAutoplay();
     setCurrentSrc(video.videoUrl);
     setHasError(false);
     setErrorMessage('');
@@ -100,7 +184,7 @@ export default function VideoPlayer({ video }) {
       videoRef.current.playbackRate = playbackSpeed;
       videoRef.current.load();
     }
-  }, [video.id, video.videoUrl, video.duration, playbackSpeed]);
+  }, [video.id, video.videoUrl, video.duration, playbackSpeed, cancelAutoplay]);
 
   // Synchronize playback rate on video element whenever playbackSpeed changes
   useEffect(() => {
@@ -176,6 +260,9 @@ export default function VideoPlayer({ video }) {
   const handleEnded = () => {
     setPlaying(false);
     setProgress(100);
+    if (nextVideo && onPlayNext) {
+      startAutoplayCountdown();
+    }
   };
 
   const handleVideoError = useCallback((e) => {
@@ -195,6 +282,9 @@ export default function VideoPlayer({ video }) {
 
   // Controls Handlers
   function togglePlay() {
+    if (autoplayActive) {
+      cancelAutoplay();
+    }
     if (hasError || !videoRef.current) return;
 
     if (videoRef.current.paused || videoRef.current.ended) {
@@ -210,6 +300,9 @@ export default function VideoPlayer({ video }) {
   }
 
   function handleProgressClick(e) {
+    if (autoplayActive) {
+      cancelAutoplay();
+    }
     if (hasError || !videoRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
@@ -242,6 +335,9 @@ export default function VideoPlayer({ video }) {
   }
 
   function skipSeconds(sec) {
+    if (autoplayActive) {
+      cancelAutoplay();
+    }
     if (hasError || !videoRef.current) return;
     const maxDur = (videoRef.current && !isNaN(videoRef.current.duration) && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
       ? videoRef.current.duration
@@ -293,10 +389,10 @@ export default function VideoPlayer({ video }) {
   }
 
   function handleKeyDown(e) {
-    // If typing in input or textarea, don't trigger shortcuts
-    if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) return;
+    // If typing in input, textarea, or contentEditable element, don't trigger shortcuts
+    if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName) || e.target?.isContentEditable) return;
 
-    // If focus is inside speed menu, let user interact with menu items
+    // If speed menu is open, handle Escape or allow clicking/navigating menu
     if (e.target && e.target.closest && e.target.closest('.video-player__speed-menu')) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -305,9 +401,21 @@ export default function VideoPlayer({ video }) {
       return;
     }
 
+    if (e.key === 'Escape' && autoplayActive) {
+      e.preventDefault();
+      cancelAutoplay();
+      return;
+    }
+
     if (e.key === ' ' || e.key === 'k' || e.key === 'K') { e.preventDefault(); togglePlay(); }
     if (e.key === 'm' || e.key === 'M') { toggleMute(); }
     if (e.key === 'f' || e.key === 'F') { toggleFullscreen(); }
+    if (e.key === 't' || e.key === 'T') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleToggleTheater();
+      return;
+    }
     if (e.key === 'ArrowLeft' || e.key === 'j' || e.key === 'J') { e.preventDefault(); skipSeconds(-10); }
     if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') { e.preventDefault(); skipSeconds(10); }
     if (e.key === 'ArrowUp') {
@@ -365,7 +473,7 @@ export default function VideoPlayer({ video }) {
   return (
     <div
       ref={containerRef}
-      className={`video-player ${showControls ? 'video-player--controls-visible' : ''} ${hasError ? 'video-player--error' : ''}`}
+      className={`video-player ${isTheaterMode ? 'video-player--theater' : ''} ${showControls ? 'video-player--controls-visible' : ''} ${hasError ? 'video-player--error' : ''}`}
       onMouseMove={handleMouseMove}
       onClick={togglePlay}
       onKeyDown={handleKeyDown}
@@ -426,11 +534,79 @@ export default function VideoPlayer({ video }) {
         </div>
       )}
 
-      {/* Big Play Overlay (when paused or ended) */}
-      {!playing && !hasError && !isBuffering && (
+      {/* Big Play Overlay (when paused or ended and not autoplaying) */}
+      {!playing && !hasError && !isBuffering && !autoplayActive && (
         <div className="video-player__big-play animate-fade-in" aria-hidden="true">
           <div className="video-player__big-play-btn">
             <Play size={46} fill="white" strokeWidth={0} />
+          </div>
+        </div>
+      )}
+
+      {/* Autoplay Next Overlay (when video ends and next video exists) */}
+      {autoplayActive && nextVideo && (
+        <div
+          className="video-player__autoplay-overlay animate-fade-in"
+          onClick={e => e.stopPropagation()}
+          role="dialog"
+          aria-label={`Up next: ${nextVideo.title}`}
+          id="player-autoplay-overlay"
+        >
+          <div className="video-player__autoplay-card glass">
+            <div className="video-player__autoplay-header">
+              <span className="video-player__autoplay-tag">Up Next</span>
+              <span className="video-player__autoplay-countdown" id="player-autoplay-countdown">
+                Playing in {autoplayCountdown}s
+              </span>
+            </div>
+
+            <div className="video-player__autoplay-bar">
+              <div
+                className="video-player__autoplay-bar-fill"
+                style={{ width: `${(autoplayCountdown / 5) * 100}%` }}
+              />
+            </div>
+
+            <div className="video-player__autoplay-video-info">
+              {nextVideo.thumbnailUrl ? (
+                <img
+                  src={nextVideo.thumbnailUrl}
+                  alt={nextVideo.title}
+                  className="video-player__autoplay-thumb"
+                />
+              ) : (
+                <div
+                  className="video-player__autoplay-thumb video-player__autoplay-thumb--fallback"
+                  style={getThumbnailStyle(nextVideo.thumbnailIndex || 0)}
+                />
+              )}
+              <div className="video-player__autoplay-details">
+                <span className="video-player__autoplay-title">{nextVideo.title}</span>
+                <span className="video-player__autoplay-channel">
+                  {nextVideo.channel?.name || 'VideoVerse Creator'}
+                </span>
+              </div>
+            </div>
+
+            <div className="video-player__autoplay-actions">
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={cancelAutoplay}
+                id="player-autoplay-cancel-btn"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={playNextNow}
+                id="player-autoplay-play-btn"
+              >
+                <Play size={14} fill="currentColor" />
+                Play Now
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -634,6 +810,22 @@ export default function VideoPlayer({ video }) {
                 </div>
               )}
             </div>
+
+            {/* Theater Mode Button */}
+            <button
+              type="button"
+              className={`video-player__btn video-player__theater-btn ${isTheaterMode ? 'video-player__btn--active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleTheater();
+              }}
+              aria-label={isTheaterMode ? 'Exit theater mode (T)' : 'Theater mode (T)'}
+              aria-pressed={isTheaterMode}
+              title={isTheaterMode ? 'Default view (T)' : 'Theater mode (T)'}
+              id="player-theater-btn"
+            >
+              <RectangleHorizontal size={17} />
+            </button>
 
             {document.pictureInPictureEnabled && (
               <button

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ThumbsUp, ThumbsDown, Share2, Download, Bell,
   CheckCircle2, ArrowLeft, Flag, MoreHorizontal, Clock, Loader2
@@ -15,6 +15,7 @@ export default function WatchPage() {
     videos,
     selectedVideo,
     navigateToHome,
+    navigateToWatch,
     subscribedChannels,
     toggleSubscribe,
     likedVideos,
@@ -31,6 +32,19 @@ export default function WatchPage() {
     quotaInfo,
   } = useApp();
   const [descExpanded, setDescExpanded] = useState(false);
+  const [isTheaterMode, setIsTheaterMode] = useState(false);
+
+  // Global 'T' shortcut to toggle theater mode when focus is anywhere on watch page
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName) || e.target?.isContentEditable) return;
+      if (e.key === 't' || e.key === 'T') {
+        setIsTheaterMode(prev => !prev);
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   if (!selectedVideo) {
     navigateToHome();
@@ -46,6 +60,13 @@ export default function WatchPage() {
   // Recommended videos (exclude current video, prefer API videos with mock fallback)
   const videoList = videos?.length ? videos : MOCK_VIDEOS;
   const recommendations = videoList.filter(v => v.id !== video.id).slice(0, 8);
+  const nextVideo = recommendations.length > 0 ? recommendations[0] : null;
+
+  function handlePlayNext() {
+    if (nextVideo) {
+      navigateToWatch(nextVideo);
+    }
+  }
 
   function handleLike() {
     toggleLike(video.id);
@@ -71,7 +92,7 @@ export default function WatchPage() {
   }
 
   return (
-    <div className="watch-page" id="watch-page">
+    <div className={`watch-page ${isTheaterMode ? 'watch-page--theater' : ''}`} id="watch-page">
       {/* Back button */}
       <button
         className="watch-page__back"
@@ -84,11 +105,19 @@ export default function WatchPage() {
       </button>
 
       <div className="watch-page__layout">
-        {/* ── Main Column ── */}
-        <main className="watch-page__main" role="main">
-          {/* Player */}
-          <VideoPlayer video={video} />
+        {/* ── Player Wrapper (persists across theater mode without unmounting) ── */}
+        <div className="watch-page__player-wrapper">
+          <VideoPlayer
+            video={video}
+            isTheaterMode={isTheaterMode}
+            onToggleTheaterMode={() => setIsTheaterMode(t => !t)}
+            nextVideo={nextVideo}
+            onPlayNext={handlePlayNext}
+          />
+        </div>
 
+        {/* ── Main Column (Meta & Comments) ── */}
+        <main className="watch-page__main" role="main">
           {/* Video meta */}
           <div className="watch-meta">
             {/* Tags */}
