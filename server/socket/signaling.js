@@ -34,6 +34,42 @@ const rooms = new Map();
 // socketToRoom: Map<socketId, roomId>
 const socketToRoom = new Map();
 
+// pendingInvitations: Map<roomId, { roomId, creatorId, inviteeId, timer, createdAt }>
+const pendingInvitations = new Map();
+let globalIoRef = null;
+
+const INVITATION_TIMEOUT_MS = 30 * 1000; // 30-second unanswered call timeout
+
+/**
+ * Checks whether a user is currently participating in an active call
+ */
+function isUserInCall(userId) {
+  const uId = String(userId);
+  for (const room of rooms.values()) {
+    for (const participant of room.participants.values()) {
+      if (String(participant.userId) === uId) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Checks whether a user is currently receiving an active call invitation from another user
+ */
+function isUserReceivingCall(userId, excludeCreatorId = null) {
+  const uId = String(userId);
+  for (const inv of pendingInvitations.values()) {
+    if (inv.inviteeId === uId) {
+      if (!excludeCreatorId || inv.creatorId !== String(excludeCreatorId)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Parses HTTP cookie header into an object of key-value pairs
  */
@@ -202,9 +238,13 @@ function leaveCurrentRoom(socket, io) {
  * Initializes real-time signaling on the Socket.IO instance
  */
 function initSignaling(io) {
+  globalIoRef = io;
   io.use(socketAuthMiddleware);
 
   io.on('connection', (socket) => {
+    // Authenticated Socket.IO private room for user-to-user notification routing
+    socket.join(`user:${socket.user.id}`);
+
     // Safe logging without exposing tokens or cookies
     console.log(`[Socket.io] User connected: ${socket.user.id} (${socket.user.name}) [Socket ID: ${socket.id}]`);
 
@@ -251,6 +291,28 @@ function initSignaling(io) {
           error: 'DB_ERROR',
           message: 'Failed to verify invitee account.',
         });
+      }
+
+      // 3b. Check if invitee is currently in another call or receiving an invitation from someone else
+      if (isUserInCall(inviteeId) || isUserReceivingCall(inviteeId, creatorId)) {
+        return ack({
+          success: false,
+          error: 'INVITEE_BUSY',
+          message: 'The contact is currently in another call or unavailable.',
+        });
+      }
+
+      // 3c. Clean up / supersede any existing pending invitation previously initiated by this creator
+      for (const [prevRoomId, inv] of pendingInvitations.entries()) {
+        if (inv.creatorId === creatorId) {
+          clearTimeout(inv.timer);
+          pendingInvitations.delete(prevRoomId);
+          io.to(`user:${inv.inviteeId}`).emit('call-cancelled', {
+            roomId: prevRoomId,
+            creatorId,
+            reason: 'superseded',
+          });
+        }
       }
 
       // 4. Per-authenticated-user room creation rate limiting
@@ -306,11 +368,51 @@ function initSignaling(io) {
 
       rooms.set(roomId, room);
 
+      // Check if invitee has any connected sockets in user:${inviteeId}
+      const inviteeRoom = io.sockets.adapter.rooms.get(`user:${inviteeId}`);
+      const inviteeOnline = Boolean(inviteeRoom && inviteeRoom.size > 0);
+
+      // Caller details derived EXCLUSIVELY from authenticated server-side socket.user
+      const caller = {
+        id: socket.user.id,
+        name: socket.user.name,
+        avatar: socket.user.avatar,
+        avatarColor: socket.user.avatarColor,
+        initials: socket.user.initials,
+      };
+
+      // 30-second unanswered call timeout
+      const timer = setTimeout(() => {
+        const inv = pendingInvitations.get(roomId);
+        if (inv) {
+          pendingInvitations.delete(roomId);
+          io.to(`user:${inv.creatorId}`).emit('call-timeout', { roomId, inviteeId: inv.inviteeId });
+          io.to(`user:${inv.inviteeId}`).emit('call-timeout', { roomId, creatorId: inv.creatorId });
+        }
+      }, INVITATION_TIMEOUT_MS);
+
+      pendingInvitations.set(roomId, {
+        roomId,
+        creatorId,
+        creatorSocketId: socket.id,
+        inviteeId,
+        timer,
+        createdAt: now,
+      });
+
+      // Emit incoming-call to invitee's authenticated private user room
+      io.to(`user:${inviteeId}`).emit('incoming-call', {
+        roomId,
+        caller,
+        createdAt: now,
+      });
+
       ack({
         success: true,
         roomId,
         creatorId,
         allowedUserIds: Array.from(allowedUserIds),
+        inviteeOnline,
       });
     });
 
@@ -375,6 +477,15 @@ function initSignaling(io) {
       room.participants.set(socket.id, participantInfo);
       socketToRoom.set(socket.id, roomId);
       socket.join(roomId);
+
+      // If designated invitee joins, clear pending invitation and notify
+      const inv = pendingInvitations.get(roomId);
+      if (inv && String(socket.user.id) === inv.inviteeId) {
+        clearTimeout(inv.timer);
+        pendingInvitations.delete(roomId);
+        io.to(`user:${inv.inviteeId}`).emit('call-accepted', { roomId, acceptedBy: socket.user.id });
+        io.to(`user:${inv.creatorId}`).emit('call-accepted', { roomId, acceptedBy: socket.user.id });
+      }
 
       // Notify existing peer in the room
       socket.to(roomId).emit('peer-joined', {
@@ -573,6 +684,18 @@ function initSignaling(io) {
         return ack({ success: false, error: 'NOT_ROOM_CREATOR', message: 'Only the room creator can close this room.' });
       }
 
+      // Clear any pending invitation for this room and notify invitee
+      const inv = pendingInvitations.get(roomId);
+      if (inv) {
+        clearTimeout(inv.timer);
+        pendingInvitations.delete(roomId);
+        io.to(`user:${inv.inviteeId}`).emit('call-cancelled', {
+          roomId,
+          creatorId: inv.creatorId,
+          reason: 'room-closed',
+        });
+      }
+
       // Notify and clean up
       io.to(roomId).emit('peer-left', { roomId, peerId: socket.id, userId: socket.user.id, reason: 'room-closed' });
       for (const sId of room.participants.keys()) {
@@ -591,8 +714,132 @@ function initSignaling(io) {
           rooms.delete(rId);
         }
       }
+      for (const [rId, inv] of pendingInvitations.entries()) {
+        if (inv.creatorId === creatorId || inv.inviteeId === creatorId) {
+          clearTimeout(inv.timer);
+          pendingInvitations.delete(rId);
+          io.to(`user:${inv.inviteeId}`).emit('call-cancelled', { roomId: rId, creatorId: inv.creatorId });
+        }
+      }
       creationRateLimits.delete(creatorId);
       ack({ success: true });
+    });
+
+    // ── 5b2. TEST TRIGGER TIMEOUT (Deterministic testing of 30s timeout) ────
+    socket.on('test-trigger-timeout', (data, callback) => {
+      const ack = typeof callback === 'function' ? callback : () => {};
+      const rawRoomId = typeof data === 'string' ? data : data?.roomId;
+      const roomId = typeof rawRoomId === 'string' ? rawRoomId.trim() : '';
+      const inv = pendingInvitations.get(roomId);
+      if (!inv) {
+        return ack({ success: false, error: 'INVITATION_NOT_FOUND' });
+      }
+      clearTimeout(inv.timer);
+      pendingInvitations.delete(roomId);
+      io.to(`user:${inv.creatorId}`).emit('call-timeout', { roomId, inviteeId: inv.inviteeId });
+      io.to(`user:${inv.inviteeId}`).emit('call-timeout', { roomId, creatorId: inv.creatorId });
+      ack({ success: true, roomId });
+    });
+
+    // ── 5c. REJECT CALL (Invitee declines incoming invitation) ────────────────
+    socket.on('reject-call', (data, callback) => {
+      const ack = typeof callback === 'function' ? callback : () => {};
+      const rawRoomId = typeof data === 'string' ? data : data?.roomId;
+      const roomId = typeof rawRoomId === 'string' ? rawRoomId.trim() : '';
+
+      if (!isValidRoomId(roomId)) {
+        return ack({
+          success: false,
+          error: 'INVALID_ROOM_ID',
+          message: 'Invalid room identifier.',
+        });
+      }
+
+      const inv = pendingInvitations.get(roomId);
+      if (!inv) {
+        return ack({
+          success: false,
+          error: 'INVITATION_NOT_FOUND',
+          message: 'Call invitation not found or already expired.',
+        });
+      }
+
+      // Authorization check: Only designated invitee can reject the call
+      if (inv.inviteeId !== String(socket.user.id)) {
+        return ack({
+          success: false,
+          error: 'UNAUTHORIZED',
+          message: 'Only the invited recipient may reject this call.',
+        });
+      }
+
+      clearTimeout(inv.timer);
+      pendingInvitations.delete(roomId);
+
+      // Emit call-rejected to creator
+      io.to(`user:${inv.creatorId}`).emit('call-rejected', {
+        roomId,
+        inviteeId: socket.user.id,
+        inviteeName: socket.user.name,
+      });
+
+      // Dismiss popup on any other tabs of invitee
+      io.to(`user:${inv.inviteeId}`).emit('call-rejected', {
+        roomId,
+        inviteeId: socket.user.id,
+      });
+
+      ack({ success: true, roomId });
+    });
+
+    // ── 5d. CANCEL CALL (Creator cancels outgoing call while ringing) ─────────
+    socket.on('cancel-call', (data, callback) => {
+      const ack = typeof callback === 'function' ? callback : () => {};
+      const rawRoomId = typeof data === 'string' ? data : data?.roomId;
+      const roomId = typeof rawRoomId === 'string' ? rawRoomId.trim() : '';
+
+      if (!isValidRoomId(roomId)) {
+        return ack({
+          success: false,
+          error: 'INVALID_ROOM_ID',
+          message: 'Invalid room identifier.',
+        });
+      }
+
+      const inv = pendingInvitations.get(roomId);
+      if (!inv) {
+        return ack({
+          success: false,
+          error: 'INVITATION_NOT_FOUND',
+          message: 'Call invitation not found or already expired.',
+        });
+      }
+
+      // Authorization check: Only creator can cancel the call
+      if (inv.creatorId !== String(socket.user.id)) {
+        return ack({
+          success: false,
+          error: 'UNAUTHORIZED',
+          message: 'Only the call initiator may cancel this call.',
+        });
+      }
+
+      clearTimeout(inv.timer);
+      pendingInvitations.delete(roomId);
+
+      // Emit call-cancelled to invitee
+      io.to(`user:${inv.inviteeId}`).emit('call-cancelled', {
+        roomId,
+        creatorId: socket.user.id,
+      });
+
+      // Also dismiss on creator's other tabs
+      io.to(`user:${inv.creatorId}`).emit('call-cancelled', {
+        roomId,
+        creatorId: socket.user.id,
+      });
+
+      ack({ success: true, roomId });
     });
 
     // ── 6. LEAVE ROOM ───────────────────────────────────────────────────────
@@ -611,6 +858,20 @@ function initSignaling(io) {
           rooms.delete(rId);
         }
       }
+
+      // Clean up any pending invitations initiated by this disconnecting socket
+      for (const [rId, inv] of pendingInvitations.entries()) {
+        if (inv.creatorSocketId === socket.id) {
+          clearTimeout(inv.timer);
+          pendingInvitations.delete(rId);
+          io.to(`user:${inv.inviteeId}`).emit('call-cancelled', {
+            roomId: rId,
+            creatorId: inv.creatorId,
+            reason: 'caller-disconnected',
+          });
+        }
+      }
+
       console.log(`[Socket.io] User disconnected: ${socket.user.id} (${socket.user.name}) [Reason: ${reason}]${leftRoomId ? ` [Left room: ${leftRoomId}]` : ''}`);
     });
   });
@@ -622,9 +883,25 @@ module.exports = {
   extractSocketToken,
   isValidRoomId,
   generateRoomId,
+  isUserInCall,
+  isUserReceivingCall,
+  INVITATION_TIMEOUT_MS,
   MAX_ROOM_CREATIONS_PER_WINDOW,
   MAX_ACTIVE_ROOMS_PER_CREATOR,
   _testRooms: rooms,
   _testSocketToRoom: socketToRoom,
   _testCreationRateLimits: creationRateLimits,
+  _testPendingInvitations: pendingInvitations,
+  _testTriggerTimeout: (roomId, ioInstance = null) => {
+    const inv = pendingInvitations.get(roomId);
+    if (!inv) return false;
+    clearTimeout(inv.timer);
+    pendingInvitations.delete(roomId);
+    const targetIo = ioInstance || globalIoRef;
+    if (targetIo) {
+      targetIo.to(`user:${inv.creatorId}`).emit('call-timeout', { roomId, inviteeId: inv.inviteeId });
+      targetIo.to(`user:${inv.inviteeId}`).emit('call-timeout', { roomId, creatorId: inv.creatorId });
+    }
+    return true;
+  },
 };

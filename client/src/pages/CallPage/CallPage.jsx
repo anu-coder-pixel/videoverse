@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { io } from 'socket.io-client';
 import {
   Video,
   VideoOff,
@@ -24,6 +23,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useCall } from '../../context/CallContext';
 import { useWebRTC } from '../../hooks/useWebRTC';
 import './CallPage.css';
 
@@ -38,6 +38,9 @@ export default function CallPage() {
     isValidRoomId,
   } = useApp();
 
+  // ── Global Signaling Gateway ───────────────────────────────────────────────
+  const { socket: globalSocket, socketConnected } = useCall();
+
   // ── Contacts State ──────────────────────────────────────────────────────────
   const [contacts, setContacts] = useState([]);
   const [contactsLoading, setContactsLoading] = useState(false);
@@ -49,13 +52,15 @@ export default function CallPage() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [roomError, setRoomError] = useState(null);
-  const [roomState, setRoomState] = useState(null); // { roomId, participants, isCreator, allowedUserIds, status }
+  const [roomState, setRoomState] = useState(null); // { roomId, participants, isCreator, allowedUserIds, status, invitee }
   const [copiedLink, setCopiedLink] = useState(false);
-  const [socketConnected, setSocketConnected] = useState(false);
 
-  const socketRef = useRef(null);
+  const socketRef = useRef(globalSocket);
+  socketRef.current = globalSocket;
   const activeRoomIdRef = useRef(activeRoomId);
   activeRoomIdRef.current = activeRoomId;
+  const selectedInviteeRef = useRef(selectedInvitee);
+  selectedInviteeRef.current = selectedInvitee;
 
   // ── Fetch Registered Contacts ───────────────────────────────────────────────
   const fetchContacts = useCallback(async () => {
@@ -85,36 +90,9 @@ export default function CallPage() {
     }
   }, [currentUser, fetchContacts]);
 
-  // ── Socket.IO Connection & Listener Lifecycle ───────────────────────────────
+  // ── Socket.IO Listener Lifecycle on Shared Gateway ─────────────────────────
   useEffect(() => {
-    if (!currentUser) return;
-
-    // Connect to Socket.IO signaling gateway with HTTP-only cookie credentials
-    const socketUrl = window.location.port === '5173' ? 'http://localhost:5000' : '/';
-    const socket = io(socketUrl, {
-      withCredentials: true,
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
-      reconnectionAttempts: 5,
-    });
-    socketRef.current = socket;
-
-    const onConnect = () => {
-      setSocketConnected(true);
-      setRoomError(null);
-    };
-
-    const onDisconnect = (reason) => {
-      setSocketConnected(false);
-      if (reason === 'io server disconnect') {
-        socket.connect();
-      }
-    };
-
-    const onConnectError = (err) => {
-      console.warn('[CallPage] Socket connect error:', err.message);
-      setSocketConnected(false);
-    };
+    if (!currentUser || !globalSocket) return;
 
     // Named handler for peer joined
     const onPeerJoined = (data) => {
@@ -164,26 +142,38 @@ export default function CallPage() {
       }
     };
 
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', onConnectError);
-    socket.on('peer-joined', onPeerJoined);
-    socket.on('peer-left', onPeerLeft);
+    // Caller receives call rejection
+    const onCallRejected = (data) => {
+      if (data?.roomId && activeRoomIdRef.current && data.roomId === activeRoomIdRef.current) {
+        showToast(`Call declined by ${selectedInviteeRef.current?.name || 'recipient'}.`);
+        setRoomState((prev) => (prev ? { ...prev, status: 'declined' } : prev));
+      }
+    };
+
+    // Caller receives unanswered timeout
+    const onCallTimeout = (data) => {
+      if (data?.roomId && activeRoomIdRef.current && data.roomId === activeRoomIdRef.current) {
+        showToast(`No answer from ${selectedInviteeRef.current?.name || 'recipient'}.`);
+        setRoomState((prev) => (prev ? { ...prev, status: 'no-answer' } : prev));
+      }
+    };
+
+    globalSocket.on('peer-joined', onPeerJoined);
+    globalSocket.on('peer-left', onPeerLeft);
+    globalSocket.on('call-rejected', onCallRejected);
+    globalSocket.on('call-timeout', onCallTimeout);
 
     return () => {
-      // Cleanup: leave current room and remove specific named listeners
-      if (activeRoomIdRef.current) {
-        socket.emit('leave-room', { roomId: activeRoomIdRef.current });
+      // Cleanup: leave current room and remove page-specific listeners without tearing down global socket
+      if (activeRoomIdRef.current && globalSocket) {
+        globalSocket.emit('leave-room', { roomId: activeRoomIdRef.current });
       }
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
-      socket.off('connect_error', onConnectError);
-      socket.off('peer-joined', onPeerJoined);
-      socket.off('peer-left', onPeerLeft);
-      socket.disconnect();
-      socketRef.current = null;
+      globalSocket.off('peer-joined', onPeerJoined);
+      globalSocket.off('peer-left', onPeerLeft);
+      globalSocket.off('call-rejected', onCallRejected);
+      globalSocket.off('call-timeout', onCallTimeout);
     };
-  }, [currentUser, showToast, navigateToCall]);
+  }, [currentUser, globalSocket, showToast, navigateToCall]);
 
   // ── Sync with external callRoomId prop changes (e.g. popstate / URL) ────────
   useEffect(() => {
@@ -294,6 +284,8 @@ export default function CallPage() {
         let msg = res?.message || 'Failed to create video call room.';
         if (errCode === 'SELF_INVITE_NOT_ALLOWED') {
           msg = 'You cannot start a call with yourself.';
+        } else if (errCode === 'INVITEE_BUSY') {
+          msg = `${selectedInvitee.name} is currently in another call or unavailable.`;
         } else if (errCode === 'RATE_LIMIT_EXCEEDED') {
           msg = 'Room creation limit reached. Please wait a minute before starting another call.';
         } else if (errCode === 'MAX_ACTIVE_ROOMS_EXCEEDED') {
@@ -318,14 +310,23 @@ export default function CallPage() {
             allowedUserIds: res.allowedUserIds,
             participants: joinRes.participants || [],
             isCreator: true,
-            status: 'waiting-for-peer',
+            status: 'ringing', // "Ringing [recipient name]..."
+            invitee: selectedInvitee,
           });
-          showToast(`Call room created! Share the link with ${selectedInvitee.name}.`);
+          showToast(`Ringing ${selectedInvitee.name}...`);
         } else {
           setRoomError(joinRes?.message || 'Room created, but failed to join as host.');
         }
       });
     });
+  };
+
+  // ── Cancel Call while Ringing ───────────────────────────────────────────────
+  const handleCancelCall = () => {
+    if (socketRef.current && activeRoomId) {
+      socketRef.current.emit('cancel-call', { roomId: activeRoomId });
+    }
+    handleEndCall();
   };
 
   // ── End / Leave Call ────────────────────────────────────────────────────────
@@ -429,6 +430,12 @@ export default function CallPage() {
               <h2 className="call-page__active-title">
                 {hasRemotePeer
                   ? `Call with ${remotePeer?.name || 'Participant'}`
+                  : roomState.status === 'ringing'
+                  ? `Ringing ${roomState.invitee?.name || 'recipient'}...`
+                  : roomState.status === 'declined'
+                  ? 'Call Declined'
+                  : roomState.status === 'no-answer'
+                  ? 'No Answer'
                   : 'Waiting for Participant to Join...'}
               </h2>
             </div>
@@ -444,16 +451,29 @@ export default function CallPage() {
                 {copiedLink ? <Check size={16} className="text-success" /> : <Copy size={16} />}
                 <span>{copiedLink ? 'Copied Link' : 'Copy Invite Link'}</span>
               </button>
-              <button
-                type="button"
-                className="call-page__btn call-page__btn--danger"
-                onClick={handleEndCall}
-                title={roomState.isCreator ? 'End Call and Close Room' : 'Leave Call'}
-                id="call-end-call-btn"
-              >
-                <PhoneOff size={16} />
-                <span>{roomState.isCreator ? 'End Call' : 'Leave Call'}</span>
-              </button>
+              {roomState.status === 'ringing' ? (
+                <button
+                  type="button"
+                  className="call-page__btn call-page__btn--danger"
+                  onClick={handleCancelCall}
+                  title="Cancel Call"
+                  id="call-cancel-ringing-header-btn"
+                >
+                  <PhoneOff size={16} />
+                  <span>Cancel Call</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="call-page__btn call-page__btn--danger"
+                  onClick={handleEndCall}
+                  title={roomState.isCreator ? 'End Call and Close Room' : 'Leave Call'}
+                  id="call-end-call-btn"
+                >
+                  <PhoneOff size={16} />
+                  <span>{roomState.isCreator ? 'End Call' : 'Leave Call'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -515,6 +535,70 @@ export default function CallPage() {
                       <div className="call-page__connecting-pulse">
                         <Radio size={16} className="call-page__spin" />
                         <span>Negotiating P2P Media Stream...</span>
+                      </div>
+                    </div>
+                  ) : roomState.status === 'ringing' ? (
+                    <div className="call-page__waiting-indicator">
+                      <Radio size={40} className="call-page__spin-icon text-primary" />
+                      <p className="call-page__waiting-text">
+                        Ringing {roomState.invitee?.name || 'contact'}...
+                      </p>
+                      <p className="call-page__waiting-sub">
+                        Waiting for the recipient to answer the incoming call invitation.
+                      </p>
+                      <button
+                        type="button"
+                        className="call-page__btn call-page__btn--danger call-page__btn--sm"
+                        style={{ marginTop: '1rem' }}
+                        onClick={handleCancelCall}
+                        id="call-cancel-ringing-btn"
+                      >
+                        <PhoneOff size={14} />
+                        <span>Cancel Call</span>
+                      </button>
+                    </div>
+                  ) : roomState.status === 'declined' ? (
+                    <div className="call-page__waiting-indicator">
+                      <PhoneOff size={40} className="text-danger" />
+                      <p className="call-page__waiting-text">Call Declined</p>
+                      <p className="call-page__waiting-sub">
+                        {roomState.invitee?.name || 'The recipient'} declined the call invitation.
+                      </p>
+                      <button
+                        type="button"
+                        className="call-page__btn call-page__btn--outline call-page__btn--sm"
+                        style={{ marginTop: '1rem' }}
+                        onClick={handleEndCall}
+                        id="call-declined-back-btn"
+                      >
+                        Back to Contacts
+                      </button>
+                    </div>
+                  ) : roomState.status === 'no-answer' ? (
+                    <div className="call-page__waiting-indicator">
+                      <Clock size={40} className="text-warning" />
+                      <p className="call-page__waiting-text">No Answer</p>
+                      <p className="call-page__waiting-sub">
+                        The call timed out with no answer. You can share the link directly or try calling again.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                        <button
+                          type="button"
+                          className="call-page__btn call-page__btn--outline call-page__btn--sm"
+                          onClick={handleCopyLink}
+                          id="call-timeout-copy-btn"
+                        >
+                          <Copy size={14} />
+                          <span>Copy Link</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="call-page__btn call-page__btn--primary call-page__btn--sm"
+                          onClick={handleEndCall}
+                          id="call-timeout-back-btn"
+                        >
+                          Back to Contacts
+                        </button>
                       </div>
                     </div>
                   ) : (

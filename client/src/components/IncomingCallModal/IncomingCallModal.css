@@ -1,0 +1,199 @@
+/* IncomingCallModal.css — VideoVerse Real-Time Calling UI */
+
+.incoming-call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  padding: 1.5rem;
+}
+
+.incoming-call-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  padding: 2.5rem 2rem 2rem;
+  border-radius: 24px;
+  background: var(--bg-card, rgba(23, 23, 30, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7),
+              0 0 40px rgba(99, 102, 241, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* Pulsing Avatar Stage */
+.incoming-call__ring-wrapper {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.incoming-call__ring-pulse {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 2px solid rgba(99, 102, 241, 0.45);
+  animation: call-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  pointer-events: none;
+}
+
+.incoming-call__ring-pulse--2 {
+  inset: -24px;
+  animation-delay: 0.5s;
+}
+
+@keyframes call-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.incoming-call__avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+}
+
+.incoming-call__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.incoming-call__avatar-text {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 1px;
+}
+
+.incoming-call__badge-icon {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  z-index: 3;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #6366f1;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg-card, #17171e);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Call Content */
+.incoming-call__content {
+  margin-bottom: 2rem;
+}
+
+.incoming-call__tag {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #818cf8;
+  margin-bottom: 0.5rem;
+}
+
+.incoming-call__name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.incoming-call__desc {
+  font-size: 0.925rem;
+  color: var(--text-secondary, #94a3b8);
+  margin: 0;
+}
+
+/* Action Buttons */
+.incoming-call__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.incoming-call__btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  min-height: 48px;
+}
+
+.incoming-call__btn:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 3px;
+}
+
+.incoming-call__btn--decline {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.incoming-call__btn--decline:hover {
+  background: #ef4444;
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.4);
+}
+
+.incoming-call__btn--accept {
+  background: #10b981;
+  color: #ffffff;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
+}
+
+.incoming-call__btn--accept:hover {
+  background: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.5);
+}

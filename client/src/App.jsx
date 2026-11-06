@@ -1,7 +1,9 @@
 import { AppProvider, useApp } from './context/AppContext';
+import { CallProvider } from './context/CallContext';
 import Navbar from './components/Navbar/Navbar';
 import Sidebar from './components/Sidebar/Sidebar';
 import AuthModal from './components/AuthModal/AuthModal';
+import IncomingCallModal from './components/IncomingCallModal/IncomingCallModal';
 import HomePage from './pages/HomePage/HomePage';
 import WatchPage from './pages/WatchPage/WatchPage';
 import CallPage from './pages/CallPage/CallPage';
@@ -31,6 +33,9 @@ function AppInner() {
       {/* Authentication Modal */}
       <AuthModal />
 
+      {/* Global Incoming Call Invitation Modal */}
+      <IncomingCallModal />
+
       {appToast && (
         <div className="app__toast animate-fade-in" role="status" aria-live="polite">
           {appToast}
@@ -43,7 +48,9 @@ function AppInner() {
 export default function App() {
   return (
     <AppProvider>
-      <AppInner />
+      <CallProvider>
+        <AppInner />
+      </CallProvider>
     </AppProvider>
   );
 }
