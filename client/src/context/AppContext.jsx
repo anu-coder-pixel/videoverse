@@ -38,6 +38,44 @@ export function isValidRoomId(roomId) {
 }
 
 /**
+ * Safely extracts a valid room ID from either a raw room ID or a full invite URL.
+ * Accepts:
+ *   - Raw room ID: "call-xyz123abc456"
+ *   - Full URL: "http://localhost:5173/?call=call-xyz123abc456"
+ *   - Path URL: "https://videoverse.local/call?call=call-xyz123abc456"
+ *   - Query substring: "?call=call-xyz123abc456"
+ * Rejects malformed URLs, empty parameters, or non-matching IDs.
+ */
+export function extractRoomId(input) {
+  if (typeof input !== 'string') return null;
+  const raw = input.trim();
+  if (!raw) return null;
+
+  // 1. If it looks like a URL or query string containing a call param
+  if (raw.includes('?') || raw.includes('&') || raw.includes('/') || raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      const dummyBase = 'https://videoverse.local';
+      const urlToParse = raw.startsWith('&') ? `?${raw.slice(1)}` : raw;
+      const parsedUrl = new URL(urlToParse, dummyBase);
+      const callParam = parsedUrl.searchParams.get('call');
+      if (callParam !== null) {
+        const trimmedCall = callParam.trim();
+        return isValidRoomId(trimmedCall) ? trimmedCall : null;
+      }
+    } catch {
+      // Malformed URL parse failure
+      return null;
+    }
+
+    return null;
+  }
+
+  // 2. Direct raw room ID check
+  return isValidRoomId(raw) ? raw : null;
+}
+
+
+/**
  * Calculates current theme based on Indian Standard Time (UTC+05:30).
  * Rule: 05:00:00 inclusive to 12:00:00 exclusive is 'light'; otherwise 'dark'.
  */
@@ -155,10 +193,11 @@ function getInitialNavigationState() {
       if (trimmed === '') {
         return { page: 'call', video: null, callRoomId: null };
       }
-      if (isValidRoomId(trimmed)) {
-        return { page: 'call', video: null, callRoomId: trimmed };
+      const extracted = extractRoomId(trimmed);
+      if (extracted) {
+        return { page: 'call', video: null, callRoomId: extracted };
       }
-      return { page: 'call', video: null, callRoomId: trimmed, invalidRoomId: true };
+      return { page: 'call', video: null, callRoomId: null, invalidRoomId: true };
     }
 
     const watchId = params.get('watch') || params.get('v') ||
@@ -206,10 +245,10 @@ export function AppProvider({ children }) {
       const params = new URLSearchParams(window.location.search);
       const callParam = params.get('call');
       if (callParam !== null) {
-        const trimmed = callParam.trim();
+        const extracted = extractRoomId(callParam);
         setSelectedVideo(null);
         setCurrentPage('call');
-        setCallRoomId(trimmed || null);
+        setCallRoomId(extracted || null);
         return;
       }
 
@@ -643,7 +682,7 @@ export function AppProvider({ children }) {
   const navigateToCall = useCallback((roomId = null) => {
     setCurrentPage('call');
     setSelectedVideo(null);
-    const validRoom = (typeof roomId === 'string' && isValidRoomId(roomId)) ? roomId.trim() : null;
+    const validRoom = extractRoomId(roomId);
     setCallRoomId(validRoom);
 
     try {
@@ -655,9 +694,9 @@ export function AppProvider({ children }) {
       if (validRoom) {
         url.searchParams.set('call', validRoom);
       } else {
-        url.searchParams.set('call', '');
+        url.searchParams.delete('call');
       }
-      window.history.pushState({ page: 'call', callRoomId: validRoom }, '', url.pathname + url.search);
+      window.history.pushState({ page: 'call', callRoomId: validRoom }, '', url.pathname + (url.search ? url.search : ''));
     } catch {
       // Safe fallback
     }
@@ -1198,6 +1237,7 @@ export function AppProvider({ children }) {
     callRoomId,
     setCallRoomId,
     isValidRoomId,
+    extractRoomId,
 
     // Views & Filters
     currentView,

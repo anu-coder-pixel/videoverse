@@ -38,6 +38,18 @@ const socketToRoom = new Map();
 const pendingInvitations = new Map();
 let globalIoRef = null;
 
+// userSockets: Map<userId, Set<socketId>> (Authenticated Socket.IO presence tracking across tabs/devices)
+const userSockets = new Map();
+
+/**
+ * Checks whether an authenticated user has at least one active socket connected
+ */
+function isUserOnline(userId) {
+  if (!userId) return false;
+  const sSet = userSockets.get(String(userId));
+  return Boolean(sSet && sSet.size > 0);
+}
+
 const INVITATION_TIMEOUT_MS = 30 * 1000; // 30-second unanswered call timeout
 
 /**
@@ -242,11 +254,38 @@ function initSignaling(io) {
   io.use(socketAuthMiddleware);
 
   io.on('connection', (socket) => {
+    const userId = String(socket.user.id);
+    const wasOnline = isUserOnline(userId);
+    let sSet = userSockets.get(userId);
+    if (!sSet) {
+      sSet = new Set();
+      userSockets.set(userId, sSet);
+    }
+    sSet.add(socket.id);
+
+    // If first connected socket for this user, broadcast real-time online presence update
+    if (!wasOnline) {
+      io.emit('user-presence', {
+        userId,
+        status: 'online',
+      });
+    }
+
     // Authenticated Socket.IO private room for user-to-user notification routing
-    socket.join(`user:${socket.user.id}`);
+    socket.join(`user:${userId}`);
 
     // Safe logging without exposing tokens or cookies
-    console.log(`[Socket.io] User connected: ${socket.user.id} (${socket.user.name}) [Socket ID: ${socket.id}]`);
+    console.log(`[Socket.io] User connected: ${userId} (${socket.user.name}) [Socket ID: ${socket.id}]`);
+
+    // ── PRESENCE: GET ONLINE USERS ──────────────────────────────────────────
+    socket.on('get-online-users', (data, callback) => {
+      const ack = typeof callback === 'function' ? callback : () => {};
+      // Return only authenticated user IDs to ensure minimal information disclosure
+      ack({
+        success: true,
+        onlineUserIds: Array.from(userSockets.keys()),
+      });
+    });
 
     // ── 0. CREATE ROOM (Authenticated Server-Authoritative Room Lifecycle) ────
     socket.on('create-room', async (data, callback) => {
@@ -368,9 +407,8 @@ function initSignaling(io) {
 
       rooms.set(roomId, room);
 
-      // Check if invitee has any connected sockets in user:${inviteeId}
-      const inviteeRoom = io.sockets.adapter.rooms.get(`user:${inviteeId}`);
-      const inviteeOnline = Boolean(inviteeRoom && inviteeRoom.size > 0);
+      // Check if invitee has any active authenticated socket connections
+      const inviteeOnline = isUserOnline(inviteeId);
 
       // Caller details derived EXCLUSIVELY from authenticated server-side socket.user
       const caller = {
@@ -512,9 +550,14 @@ function initSignaling(io) {
         isSelf: p.socketId === socket.id,
       }));
 
+      const isCreator = room.creatorId === String(socket.user.id);
+
       ack({
         success: true,
         roomId,
+        creatorId: room.creatorId,
+        isCreator,
+        allowedUserIds: Array.from(room.allowedUserIds || []),
         participants,
         peerCount: room.participants.size,
       });
@@ -872,6 +915,21 @@ function initSignaling(io) {
         }
       }
 
+      // Multi-tab/device presence tracking cleanup
+      const userId = String(socket.user.id);
+      const sSet = userSockets.get(userId);
+      if (sSet) {
+        sSet.delete(socket.id);
+        if (sSet.size === 0) {
+          userSockets.delete(userId);
+          // Only broadcast offline status once ALL tabs/devices for this user disconnect
+          io.emit('user-presence', {
+            userId,
+            status: 'offline',
+          });
+        }
+      }
+
       console.log(`[Socket.io] User disconnected: ${socket.user.id} (${socket.user.name}) [Reason: ${reason}]${leftRoomId ? ` [Left room: ${leftRoomId}]` : ''}`);
     });
   });
@@ -885,6 +943,7 @@ module.exports = {
   generateRoomId,
   isUserInCall,
   isUserReceivingCall,
+  isUserOnline,
   INVITATION_TIMEOUT_MS,
   MAX_ROOM_CREATIONS_PER_WINDOW,
   MAX_ACTIVE_ROOMS_PER_CREATOR,
@@ -892,6 +951,7 @@ module.exports = {
   _testSocketToRoom: socketToRoom,
   _testCreationRateLimits: creationRateLimits,
   _testPendingInvitations: pendingInvitations,
+  _testUserSockets: userSockets,
   _testTriggerTimeout: (roomId, ioInstance = null) => {
     const inv = pendingInvitations.get(roomId);
     if (!inv) return false;

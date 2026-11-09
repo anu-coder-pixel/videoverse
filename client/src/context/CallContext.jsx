@@ -8,6 +8,7 @@ export function CallProvider({ children }) {
   const { currentUser, navigateToCall, showToast } = useApp();
   const [socketConnected, setSocketConnected] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null); // { roomId, caller, createdAt }
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
 
   const socketRef = useRef(null);
 
@@ -19,11 +20,16 @@ export function CallProvider({ children }) {
       }
       setSocketConnected(false);
       setIncomingCall(null);
+      setOnlineUserIds(new Set());
       return;
     }
 
-    // Connect to Socket.IO signaling gateway with HTTP-only cookie credentials
-    const socketUrl = window.location.port === '5173' ? 'http://localhost:5000' : '/';
+    // Determine signaling gateway URL:
+    // In local dev with Vite proxy (or when custom URL is not provided), use same-origin '/' to ensure
+    // HTTP-only cookies are automatically included regardless of localhost, 127.0.0.1, or LAN IP access.
+    // In production with an explicit custom backend, use that configured endpoint.
+    const customBackendUrl = (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_SOCKET_URL || import.meta.env?.VITE_API_BASE_URL)) || '';
+    const socketUrl = customBackendUrl ? customBackendUrl.replace(/\/$/, '') : '/';
     const socket = io(socketUrl, {
       withCredentials: true,
       transports: ['websocket', 'polling'],
@@ -34,6 +40,12 @@ export function CallProvider({ children }) {
 
     const onConnect = () => {
       setSocketConnected(true);
+      // Fetch initial list of online users from server-authoritative presence tracker
+      socket.emit('get-online-users', {}, (res) => {
+        if (res && res.success && Array.isArray(res.onlineUserIds)) {
+          setOnlineUserIds(new Set(res.onlineUserIds.map(String)));
+        }
+      });
     };
 
     const onDisconnect = (reason) => {
@@ -102,6 +114,21 @@ export function CallProvider({ children }) {
       });
     };
 
+    // Real-time presence updates (multi-tab / multi-device aware)
+    const onUserPresence = (data) => {
+      if (!data || !data.userId || !data.status) return;
+      const targetUserId = String(data.userId);
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (data.status === 'online') {
+          next.add(targetUserId);
+        } else if (data.status === 'offline') {
+          next.delete(targetUserId);
+        }
+        return next;
+      });
+    };
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('connect_error', onConnectError);
@@ -110,6 +137,7 @@ export function CallProvider({ children }) {
     socket.on('call-timeout', onCallTimeout);
     socket.on('call-accepted', onCallAccepted);
     socket.on('call-rejected', onCallRejected);
+    socket.on('user-presence', onUserPresence);
 
     return () => {
       socket.off('connect', onConnect);
@@ -120,6 +148,7 @@ export function CallProvider({ children }) {
       socket.off('call-timeout', onCallTimeout);
       socket.off('call-accepted', onCallAccepted);
       socket.off('call-rejected', onCallRejected);
+      socket.off('user-presence', onUserPresence);
       socket.disconnect();
       socketRef.current = null;
       setSocketConnected(false);
@@ -142,6 +171,12 @@ export function CallProvider({ children }) {
     setIncomingCall(null);
   }, []);
 
+  // Check whether a specific user is currently online
+  const isUserOnline = useCallback((userId) => {
+    if (!userId) return false;
+    return onlineUserIds.has(String(userId));
+  }, [onlineUserIds]);
+
   const value = {
     socket: socketRef.current,
     socketRef,
@@ -149,6 +184,8 @@ export function CallProvider({ children }) {
     incomingCall,
     acceptCall,
     declineCall,
+    onlineUserIds,
+    isUserOnline,
   };
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

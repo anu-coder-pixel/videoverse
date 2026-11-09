@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Video,
   VideoOff,
@@ -8,6 +8,7 @@ import {
   PhoneOff,
   User,
   Users,
+  UserX,
   Copy,
   Check,
   AlertCircle,
@@ -36,10 +37,11 @@ export default function CallPage() {
     navigateToCall,
     navigateToHome,
     isValidRoomId,
+    extractRoomId,
   } = useApp();
 
   // ── Global Signaling Gateway ───────────────────────────────────────────────
-  const { socket: globalSocket, socketConnected } = useCall();
+  const { socket: globalSocket, socketConnected, isUserOnline } = useCall();
 
   // ── Contacts State ──────────────────────────────────────────────────────────
   const [contacts, setContacts] = useState([]);
@@ -180,10 +182,24 @@ export default function CallPage() {
     setActiveRoomId(callRoomId || null);
   }, [callRoomId]);
 
-  // ── WebRTC Hook Integration (Phase 6.2.2) ───────────────────────────────────
+  // ── WebRTC Hook Integration (Phase 6.6) ───────────────────────────────────
+  const handleWebRTCPeerLeft = useCallback(() => {
+    setRoomState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        status: 'waiting-for-peer',
+      };
+    });
+  }, []);
+
+  const remotePeer = roomState?.participants?.find((p) => !p.isSelf);
+  const hasRemotePeer = Boolean(remotePeer || (roomState?.participants && roomState.participants.length > 1));
+
   const {
     localStream,
     remoteStream,
+    hasRemoteVideo,
     localVideoRef,
     remoteVideoRef,
     connectionState,
@@ -198,28 +214,22 @@ export default function CallPage() {
     resumeAutoplay,
     cleanup: cleanupWebRTC,
   } = useWebRTC({
-    socket: socketRef.current,
+    socket: globalSocket,
     roomId: activeRoomId,
     isCreator: Boolean(roomState?.isCreator),
-    enabled: Boolean(roomState && socketConnected),
-    onPeerLeft: () => {
-      setRoomState((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          status: 'waiting-for-peer',
-        };
-      });
-    },
+    hasRemotePeer,
+    enabled: Boolean(activeRoomId && socketConnected),
+    onPeerLeft: handleWebRTCPeerLeft,
     showToast,
   });
 
   // ── Join Room Flow ──────────────────────────────────────────────────────────
-  const joinRoom = useCallback((roomIdToJoin) => {
-    if (!roomIdToJoin || !socketRef.current) return;
+  const joinRoom = useCallback((input) => {
+    if (!input || !socketRef.current) return;
 
-    if (!isValidRoomId(roomIdToJoin)) {
-      setRoomError('Invalid room identifier format. Room IDs must be 6-64 characters with alphanumeric characters, dashes, or underscores.');
+    const roomIdToJoin = extractRoomId ? extractRoomId(input) : (isValidRoomId(input) ? input.trim() : null);
+    if (!roomIdToJoin) {
+      setRoomError('Invalid room identifier or link. Room IDs must be 6-64 characters with alphanumeric characters, dashes, or underscores, or an invite link with ?call=<roomId>.');
       return;
     }
 
@@ -247,20 +257,25 @@ export default function CallPage() {
       setActiveRoomId(roomIdToJoin);
       setRoomState({
         roomId: res.roomId,
+        creatorId: res.creatorId,
+        allowedUserIds: res.allowedUserIds,
         participants: res.participants || [],
-        isCreator: false,
+        isCreator: Boolean(res.isCreator),
         status: (res.participants?.length > 1) ? 'peer-connected' : 'waiting-for-peer',
       });
       showToast('Joined call room successfully');
     });
-  }, [isValidRoomId, showToast]);
+  }, [extractRoomId, isValidRoomId, showToast]);
 
   // If page loads with a roomId parameter, automatically attempt to join
   useEffect(() => {
     if (callRoomId && socketConnected && !roomState && !roomError) {
-      joinRoom(callRoomId);
+      const extracted = extractRoomId ? extractRoomId(callRoomId) : callRoomId;
+      if (extracted) {
+        joinRoom(extracted);
+      }
     }
-  }, [callRoomId, socketConnected, roomState, roomError, joinRoom]);
+  }, [callRoomId, socketConnected, roomState, roomError, joinRoom, extractRoomId]);
 
   // ── Create Room Flow ────────────────────────────────────────────────────────
   const handleStartCall = async () => {
@@ -301,6 +316,8 @@ export default function CallPage() {
       setActiveRoomId(newRoomId);
       navigateToCall(newRoomId);
 
+      const isInviteeOnline = res.inviteeOnline !== false;
+
       // Creator automatically joins the newly allocated room
       socketRef.current.emit('join-room', { roomId: newRoomId }, (joinRes) => {
         if (joinRes && joinRes.success) {
@@ -310,10 +327,15 @@ export default function CallPage() {
             allowedUserIds: res.allowedUserIds,
             participants: joinRes.participants || [],
             isCreator: true,
-            status: 'ringing', // "Ringing [recipient name]..."
+            status: isInviteeOnline ? 'ringing' : 'offline',
             invitee: selectedInvitee,
+            inviteeOnline: isInviteeOnline,
           });
-          showToast(`Ringing ${selectedInvitee.name}...`);
+          if (isInviteeOnline) {
+            showToast(`Ringing ${selectedInvitee.name}...`);
+          } else {
+            showToast(`${selectedInvitee.name} is currently offline. You can copy and share the direct invite link.`);
+          }
         } else {
           setRoomError(joinRes?.message || 'Room created, but failed to join as host.');
         }
@@ -432,6 +454,8 @@ export default function CallPage() {
                   ? `Call with ${remotePeer?.name || 'Participant'}`
                   : roomState.status === 'ringing'
                   ? `Ringing ${roomState.invitee?.name || 'recipient'}...`
+                  : roomState.status === 'offline'
+                  ? `${roomState.invitee?.name || 'Recipient'} is Offline`
                   : roomState.status === 'declined'
                   ? 'Call Declined'
                   : roomState.status === 'no-answer'
@@ -513,15 +537,17 @@ export default function CallPage() {
           <div className="call-page__video-stage">
             {/* Main Remote Video Screen */}
             <div className="call-page__remote-wrapper glass">
-              {remoteStream ? (
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className="call-page__remote-video"
-                  id="remote-video-player"
-                />
-              ) : (
+              {/* Always mounted remote video element ensures audio & video tracks are never unmounted */}
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="call-page__remote-video"
+                id="remote-video-player"
+                style={{ display: hasRemoteVideo ? 'block' : 'none' }}
+              />
+
+              {!hasRemoteVideo && (
                 <div className="call-page__remote-placeholder">
                   {hasRemotePeer ? (
                     <div className="call-page__remote-peer-card">
@@ -532,10 +558,32 @@ export default function CallPage() {
                         {remotePeer?.initials || 'P'}
                       </div>
                       <p className="call-page__remote-name">{remotePeer?.name || 'Peer'}</p>
-                      <div className="call-page__connecting-pulse">
-                        <Radio size={16} className="call-page__spin" />
-                        <span>Negotiating P2P Media Stream...</span>
-                      </div>
+                      {connectionState === 'connected' ? (
+                        <div className="call-page__connecting-pulse call-page__connecting-pulse--connected">
+                          <Radio size={16} />
+                          <span>🎙️ Connected (Camera Off / Audio Only)</span>
+                        </div>
+                      ) : connectionState === 'connecting' ? (
+                        <div className="call-page__connecting-pulse">
+                          <Radio size={16} className="call-page__spin" />
+                          <span>Establishing Media Connection...</span>
+                        </div>
+                      ) : connectionState === 'reconnecting' ? (
+                        <div className="call-page__connecting-pulse call-page__connecting-pulse--warning">
+                          <RefreshCw size={16} className="call-page__spin" />
+                          <span>Reconnecting Stream...</span>
+                        </div>
+                      ) : connectionState === 'failed' ? (
+                        <div className="call-page__connecting-pulse call-page__connecting-pulse--danger">
+                          <AlertCircle size={16} />
+                          <span>Connection Failed</span>
+                        </div>
+                      ) : (
+                        <div className="call-page__connecting-pulse">
+                          <Radio size={16} className="call-page__spin" />
+                          <span>Negotiating P2P Media Stream...</span>
+                        </div>
+                      )}
                     </div>
                   ) : roomState.status === 'ringing' ? (
                     <div className="call-page__waiting-indicator">
@@ -556,6 +604,35 @@ export default function CallPage() {
                         <PhoneOff size={14} />
                         <span>Cancel Call</span>
                       </button>
+                    </div>
+                  ) : roomState.status === 'offline' ? (
+                    <div className="call-page__waiting-indicator">
+                      <UserX size={40} className="text-warning" />
+                      <p className="call-page__waiting-text">
+                        {roomState.invitee?.name || 'Recipient'} is Currently Offline
+                      </p>
+                      <p className="call-page__waiting-sub">
+                        The recipient does not have an active browser session right now. You can copy the invite link and share it directly with them to join when ready.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          className="call-page__btn call-page__btn--primary call-page__btn--sm"
+                          onClick={handleCopyLink}
+                          id="call-offline-copy-btn"
+                        >
+                          <Copy size={14} />
+                          <span>Copy Invite Link</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="call-page__btn call-page__btn--outline call-page__btn--sm"
+                          onClick={handleEndCall}
+                          id="call-offline-back-btn"
+                        >
+                          Back to Contacts
+                        </button>
+                      </div>
                     </div>
                   ) : roomState.status === 'declined' ? (
                     <div className="call-page__waiting-indicator">
@@ -622,16 +699,16 @@ export default function CallPage() {
 
               {/* Floating Local Picture-in-Picture Preview */}
               <div className="call-page__local-wrapper glass">
-                {localStream && !isVideoOff && !isAudioOnly ? (
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="call-page__local-video"
-                    id="local-video-preview"
-                  />
-                ) : (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="call-page__local-video"
+                  id="local-video-preview"
+                  style={{ display: (localStream && !isVideoOff && !isAudioOnly) ? 'block' : 'none' }}
+                />
+                {(!localStream || isVideoOff || isAudioOnly) && (
                   <div className="call-page__local-placeholder">
                     <div
                       className="call-page__local-avatar"
@@ -805,6 +882,8 @@ export default function CallPage() {
               <ul className="call-page__contacts-list" role="listbox" aria-label="Select contact to call">
                 {contacts.map((contact) => {
                   const isSelected = selectedInvitee?.id === contact.id;
+                  const hasDuplicateName = contacts.filter((c) => c.name && contact.name && c.name.toLowerCase() === contact.name.toLowerCase()).length > 1;
+                  const online = typeof isUserOnline === 'function' ? isUserOnline(contact.id) : false;
                   return (
                     <li
                       key={contact.id}
@@ -819,15 +898,34 @@ export default function CallPage() {
                         }
                       }}
                     >
-                      <div
-                        className="call-page__contact-avatar"
-                        style={{ background: contact.avatarColor || '#6366f1' }}
-                      >
-                        {contact.initials || contact.name?.slice(0, 2).toUpperCase()}
+                      <div className="call-page__avatar-wrapper">
+                        <div
+                          className="call-page__contact-avatar"
+                          style={{ background: contact.avatarColor || '#6366f1' }}
+                        >
+                          {contact.initials || contact.name?.slice(0, 2).toUpperCase()}
+                        </div>
+                        <span
+                          className={`call-page__presence-dot ${online ? 'call-page__presence-dot--online' : 'call-page__presence-dot--offline'}`}
+                          title={online ? 'Online' : 'Offline'}
+                          aria-label={online ? 'Online' : 'Offline'}
+                        />
                       </div>
                       <div className="call-page__contact-meta">
-                        <span className="call-page__contact-name truncate">{contact.name}</span>
-                        <span className="call-page__contact-email truncate">{contact.email}</span>
+                        <div className="call-page__contact-name-row">
+                          <span className="call-page__contact-name">{contact.name}</span>
+                          {hasDuplicateName && (
+                            <span className="call-page__duplicate-badge" title={`Account: ${contact.email}`}>
+                              {contact.email ? contact.email.split('@')[0] : 'user'}
+                            </span>
+                          )}
+                          <span
+                            className={`call-page__presence-pill ${online ? 'call-page__presence-pill--online' : 'call-page__presence-pill--offline'}`}
+                          >
+                            {online ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                        <span className="call-page__contact-email">{contact.email}</span>
                       </div>
                       {isSelected && (
                         <div className="call-page__selected-badge">
@@ -856,21 +954,46 @@ export default function CallPage() {
 
             <div className="call-page__start-body">
               {selectedInvitee ? (
-                <div className="call-page__target-preview glass animate-fade-in">
-                  <span className="call-page__target-label">Selected Recipient:</span>
-                  <div className="call-page__target-row">
-                    <div
-                      className="call-page__contact-avatar"
-                      style={{ background: selectedInvitee.avatarColor || '#6366f1' }}
-                    >
-                      {selectedInvitee.initials}
+                (() => {
+                  const inviteeIsOnline = typeof isUserOnline === 'function' ? isUserOnline(selectedInvitee.id) : false;
+                  return (
+                    <div className="call-page__target-preview glass animate-fade-in">
+                      <div className="call-page__target-header">
+                        <span className="call-page__target-label">Selected Recipient:</span>
+                        <span
+                          className={`call-page__presence-pill ${inviteeIsOnline ? 'call-page__presence-pill--online' : 'call-page__presence-pill--offline'}`}
+                        >
+                          {inviteeIsOnline ? '🟢 Online' : '⚪ Offline'}
+                        </span>
+                      </div>
+                      <div className="call-page__target-row">
+                        <div className="call-page__avatar-wrapper">
+                          <div
+                            className="call-page__contact-avatar"
+                            style={{ background: selectedInvitee.avatarColor || '#6366f1' }}
+                          >
+                            {selectedInvitee.initials || selectedInvitee.name?.slice(0, 2).toUpperCase()}
+                          </div>
+                          <span
+                            className={`call-page__presence-dot ${inviteeIsOnline ? 'call-page__presence-dot--online' : 'call-page__presence-dot--offline'}`}
+                          />
+                        </div>
+                        <div className="call-page__target-meta">
+                          <p className="call-page__target-name">{selectedInvitee.name}</p>
+                          <p className="call-page__target-email">{selectedInvitee.email}</p>
+                        </div>
+                      </div>
+                      {!inviteeIsOnline && (
+                        <div className="call-page__offline-notice">
+                          <AlertTriangle size={14} className="text-warning" style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <span>
+                            This contact is currently <strong>offline</strong>. They will not receive a ringing notification until they open VideoVerse. You can still generate an invite link.
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <div className="call-page__target-meta">
-                      <p className="call-page__target-name">{selectedInvitee.name}</p>
-                      <p className="call-page__target-email">{selectedInvitee.email}</p>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()
               ) : (
                 <div className="call-page__prompt-box">
                   <Share2 size={28} className="text-muted" />
@@ -893,7 +1016,10 @@ export default function CallPage() {
                 ) : (
                   <>
                     <Phone size={18} />
-                    <span>Start Call with {selectedInvitee ? selectedInvitee.name : 'Recipient'}</span>
+                    <span>
+                      Start Call with {selectedInvitee ? selectedInvitee.name : 'Recipient'}
+                      {selectedInvitee && isUserOnline && !isUserOnline(selectedInvitee.id) ? ' (Offline)' : ''}
+                    </span>
                   </>
                 )}
               </button>
@@ -905,10 +1031,10 @@ export default function CallPage() {
                   <input
                     type="text"
                     className="call-page__room-input"
-                    placeholder="e.g. call-xyz123abc456"
+                    placeholder="e.g. call-xyz123abc456 or paste invite link"
                     value={activeRoomId || ''}
                     onChange={(e) => setActiveRoomId(e.target.value.trim())}
-                    aria-label="Enter Call Room ID"
+                    aria-label="Enter Call Room ID or Paste Invite Link"
                     id="call-room-id-input"
                   />
                   <button

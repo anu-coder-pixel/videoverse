@@ -1,16 +1,17 @@
 /**
  * VideoVerse — WebRTC Media & Peer Connection Hook
  *
- * Phase 6.2.2: Native WebRTC 1-on-1 audio/video calling.
+ * Phase 6.6: Complete Real-Time Audio & Video Calling Implementation.
  *
  * Capabilities:
  * - Owns RTCPeerConnection lifecycle and STUN/TURN ICE server configuration
  * - Requests camera & microphone with noise-suppressed audio and high-res video
  * - Safe fallback to basic video or audio-only mode when hardware is missing/constrained
- * - Strict offer/answer negotiation order (caller/creator initiates initial offer to avoid glare)
+ * - Strict offer/answer negotiation order (designated creator/offerer initiates offer)
  * - Incoming ICE candidate buffering queue while remoteDescription is pending
  * - Media track controls: mic mute/unmute and camera toggle using track.enabled
  * - Detailed error handling for NotAllowedError, NotFoundError, NotReadableError, etc.
+ * - Persistent remote MediaStream tracking preserving audio & video across track arrivals
  * - Comprehensive teardown: track stops, peer connection closure, specific listener removal
  */
 
@@ -155,7 +156,7 @@ export const HIGH_RES_CONSTRAINTS = {
     width: { ideal: 1280, max: 1920 },
     height: { ideal: 720, max: 1080 },
     frameRate: { ideal: 30, max: 60 },
-    facingMode: 'user',
+    facingMode: { ideal: 'user' },
   },
 };
 
@@ -182,12 +183,14 @@ export function useWebRTC({
   socket,
   roomId,
   isCreator = false,
+  hasRemotePeer = false,
   enabled = false,
   onPeerLeft,
   showToast,
 }) {
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [connectionState, setConnectionState] = useState('idle'); // 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed' | 'closed'
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
@@ -195,13 +198,19 @@ export function useWebRTC({
   const [mediaError, setMediaError] = useState(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
+  const onPeerLeftRef = useRef(onPeerLeft);
+  onPeerLeftRef.current = onPeerLeft;
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const mediaPromiseRef = useRef(null);
   const earlyCandidatesRef = useRef([]);
   const isMakingOfferRef = useRef(false);
-  const isInitiatingMediaRef = useRef(false);
 
   // Dynamic ICE server resolution and call lifecycle guards
   const isCallActiveRef = useRef(false);
@@ -211,77 +220,121 @@ export function useWebRTC({
 
   // ── 1. Acquire Local Media Stream ───────────────────────────────────────────
   const startMedia = useCallback(async () => {
-    if (isInitiatingMediaRef.current || localStreamRef.current) {
+    // If we already have an active stream with live tracks, return it immediately
+    if (localStreamRef.current && localStreamRef.current.getTracks().some((t) => t.readyState === 'live')) {
       return localStreamRef.current;
     }
-    isInitiatingMediaRef.current = true;
-    setMediaError(null);
 
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      const errText = 'Your browser does not support camera or microphone capture.';
-      setMediaError(errText);
-      isInitiatingMediaRef.current = false;
-      return null;
+    // If a media acquisition is currently in flight, await the existing promise
+    if (mediaPromiseRef.current) {
+      return mediaPromiseRef.current;
     }
 
-    let stream = null;
-    let audioOnly = false;
+    const acquireStream = async () => {
+      setMediaError(null);
 
-    // 1. Try optimal high-resolution constraints
-    try {
-      stream = await navigator.mediaDevices.getUserMedia(HIGH_RES_CONSTRAINTS);
-    } catch (err) {
-      console.warn('[WebRTC] High-res media constraints failed:', err.name, err.message);
-
-      // 2. Try basic constraints if overconstrained
-      if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(BASIC_CONSTRAINTS);
-        } catch (basicErr) {
-          console.warn('[WebRTC] Basic media constraints failed:', basicErr.name);
-        }
-      }
-
-      // 3. Fallback to audio-only if camera is missing or in-use
-      if (!stream && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError' || err.name === 'NotReadableError' || err.name === 'TrackStartError')) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS);
-          audioOnly = true;
-          setIsAudioOnly(true);
-          if (showToast) showToast('📷 Camera unavailable. Joined in audio-only mode.');
-        } catch (audioErr) {
-          console.error('[WebRTC] Audio-only fallback also failed:', audioErr.name);
-        }
-      }
-
-      // 4. Map user-facing error message if all attempts failed
-      if (!stream) {
-        let msg = 'Failed to access camera and microphone.';
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          msg = 'Permission denied: Please allow camera and microphone access in your browser.';
-        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-          msg = 'No camera or microphone hardware found on this device.';
-        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-          msg = 'Camera or microphone is already in use by another application.';
-        }
-        setMediaError(msg);
-        isInitiatingMediaRef.current = false;
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const errText = 'Your browser does not support camera or microphone capture.';
+        setMediaError(errText);
         return null;
       }
-    }
 
-    localStreamRef.current = stream;
-    setLocalStream(stream);
-    setIsAudioOnly(audioOnly);
-    isInitiatingMediaRef.current = false;
+      let stream = null;
+      let audioOnly = false;
 
-    // Attach stream to local preview video element
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream;
-    }
+      // 1. Try optimal high-resolution constraints
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(HIGH_RES_CONSTRAINTS);
+      } catch (err) {
+        console.warn('[WebRTC] High-res media constraints failed:', err.name, err.message);
 
-    return stream;
-  }, [showToast]);
+        // 2. Try basic constraints if overconstrained or failed
+        if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(BASIC_CONSTRAINTS);
+          } catch (basicErr) {
+            console.warn('[WebRTC] Basic media constraints failed:', basicErr.name);
+          }
+        }
+
+        // 3. Fallback to audio-only if camera is missing, in-use, or constrained
+        if (!stream && (
+          err.name === 'NotFoundError' ||
+          err.name === 'DevicesNotFoundError' ||
+          err.name === 'NotReadableError' ||
+          err.name === 'TrackStartError' ||
+          err.name === 'OverconstrainedError'
+        )) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS);
+            audioOnly = true;
+            setIsAudioOnly(true);
+            if (showToastRef.current) {
+              showToastRef.current('📷 Camera in use or unavailable. Joined in audio-only mode.');
+            }
+          } catch (audioErr) {
+            console.error('[WebRTC] Audio-only fallback also failed:', audioErr.name);
+          }
+        }
+
+        // 4. Map user-facing error message if all attempts failed
+        if (!stream) {
+          let msg = 'Failed to access camera and microphone.';
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            msg = 'Permission denied: Please allow camera and microphone access in your browser.';
+          } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+            msg = 'No camera or microphone hardware found on this device.';
+          } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+            msg = 'Camera or microphone is already in use by another application.';
+          } else if (err.name === 'SecurityError') {
+            msg = 'Media capture blocked by security policy. HTTPS or localhost is required.';
+          } else if (err.name === 'AbortError') {
+            msg = 'Media acquisition was aborted by the hardware or browser.';
+          }
+          setMediaError(msg);
+          return null;
+        }
+      }
+
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setIsAudioOnly(audioOnly);
+
+      // Attach tracks to existing RTCPeerConnection if one was already initialized
+      if (pcRef.current) {
+        const existingSenders = pcRef.current.getSenders ? pcRef.current.getSenders() : [];
+        stream.getTracks().forEach((track) => {
+          const sender = existingSenders.find((s) => s.track && s.track.kind === track.kind);
+          if (sender) {
+            sender.replaceTrack(track).catch((rErr) => {
+              console.warn('[WebRTC] replaceTrack error:', rErr);
+            });
+          } else {
+            try {
+              pcRef.current.addTrack(track, stream);
+            } catch (addErr) {
+              console.warn('[WebRTC] addTrack to existing pc error:', addErr);
+            }
+          }
+        });
+      }
+
+      // Attach stream to local preview video element
+      if (localVideoRef.current) {
+        localVideoRef.current.muted = true;
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
+      }
+
+      return stream;
+    };
+
+    mediaPromiseRef.current = acquireStream().finally(() => {
+      mediaPromiseRef.current = null;
+    });
+
+    return mediaPromiseRef.current;
+  }, []);
 
   // ── 2. Flush Early Buffered ICE Candidates ──────────────────────────────────
   const flushCandidateQueue = useCallback(async () => {
@@ -290,6 +343,7 @@ export function useWebRTC({
 
     while (earlyCandidatesRef.current.length > 0) {
       const candidateData = earlyCandidatesRef.current.shift();
+      if (!candidateData || !candidateData.candidate) continue;
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidateData));
       } catch (err) {
@@ -335,6 +389,7 @@ export function useWebRTC({
     isCallActiveRef.current = false;
     iceServersRef.current = null;
     iceFetchPromiseRef.current = null;
+    mediaPromiseRef.current = null;
 
     // 1. Stop all tracks on local stream
     if (localStreamRef.current) {
@@ -349,8 +404,19 @@ export function useWebRTC({
     }
     setLocalStream(null);
 
-    // 2. Clear remote stream
+    // 2. Clear remote stream and stop any tracks
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // Ignore
+        }
+      });
+      remoteStreamRef.current = null;
+    }
     setRemoteStream(null);
+    setHasRemoteVideo(false);
 
     // 3. Clear video element sources
     if (localVideoRef.current) {
@@ -377,7 +443,6 @@ export function useWebRTC({
     // 5. Clear state and buffers
     earlyCandidatesRef.current = [];
     isMakingOfferRef.current = false;
-    isInitiatingMediaRef.current = false;
     setConnectionState('closed');
   }, []);
 
@@ -431,15 +496,43 @@ export function useWebRTC({
 
     // Handle remote media track
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-          remoteVideoRef.current.play().catch((playErr) => {
-            console.warn('[WebRTC] Remote video autoplay blocked:', playErr);
-            setAutoplayBlocked(true);
-          });
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+
+      // Add track to persistent stream if not already present
+      if (!remoteStreamRef.current.getTracks().some((t) => t.id === event.track.id)) {
+        remoteStreamRef.current.addTrack(event.track);
+      }
+
+      const updateRemoteVideoStatus = () => {
+        const stream = remoteStreamRef.current;
+        const vTracks = stream ? stream.getVideoTracks() : [];
+        const hasLiveVideo = vTracks.some((t) => t.readyState === 'live' && !t.muted);
+        setHasRemoteVideo(hasLiveVideo);
+      };
+
+      event.track.onmute = updateRemoteVideoStatus;
+      event.track.onunmute = updateRemoteVideoStatus;
+      event.track.onended = () => {
+        updateRemoteVideoStatus();
+        const currentTracks = remoteStreamRef.current ? remoteStreamRef.current.getTracks() : [];
+        setRemoteStream(currentTracks.length > 0 ? new MediaStream(currentTracks) : null);
+      };
+
+      // Always create a new MediaStream container for React state so React reliably detects change
+      const cloned = new MediaStream(remoteStreamRef.current.getTracks());
+      setRemoteStream(cloned);
+      updateRemoteVideoStatus();
+
+      if (remoteVideoRef.current) {
+        if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
         }
+        remoteVideoRef.current.play().catch((playErr) => {
+          console.warn('[WebRTC] Remote video autoplay blocked:', playErr);
+          setAutoplayBlocked(true);
+        });
       }
     };
 
@@ -479,7 +572,73 @@ export function useWebRTC({
     return pc;
   }, [socket, roomId, getOrFetchIceServers]);
 
-  // ── 5. Signaling Event Listeners (Offer, Answer, Candidate, Peers) ───────────
+  // ── 5. Designated Offerer Initiation ────────────────────────────────────────
+  const initiateOffer = useCallback(async (customPc = null, sessionGen = callGenerationRef.current) => {
+    if (!isCreator) return;
+    if (isMakingOfferRef.current) return;
+    if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+    try {
+      isMakingOfferRef.current = true;
+      setConnectionState('connecting');
+
+      // Ensure local media is ready before offering
+      let stream = localStreamRef.current;
+      if (!stream) {
+        stream = await startMedia();
+      }
+
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+      let pc = customPc || pcRef.current;
+      if (!pc) {
+        pc = await initPeerConnection(stream, sessionGen);
+      } else if (stream && pc.getSenders) {
+        const senders = pc.getSenders();
+        stream.getTracks().forEach((track) => {
+          const hasSender = senders.some((s) => s.track && s.track.kind === track.kind);
+          if (!hasSender) {
+            try {
+              pc.addTrack(track, stream);
+            } catch (addErr) {
+              console.warn('[WebRTC] Error attaching local track to pc:', addErr.message);
+            }
+          }
+        });
+      }
+      if (!pc || !isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+      await pc.setLocalDescription(offer);
+
+      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
+
+      socket.emit('offer', {
+        roomId,
+        sdp: {
+          type: 'offer',
+          sdp: offer.sdp,
+        },
+      });
+    } catch (err) {
+      if (callGenerationRef.current === sessionGen && isCallActiveRef.current) {
+        console.error('[WebRTC] Failed to create or dispatch offer:', err);
+        setConnectionState('failed');
+      }
+    } finally {
+      if (callGenerationRef.current === sessionGen) {
+        isMakingOfferRef.current = false;
+      }
+    }
+  }, [isCreator, roomId, socket, startMedia, initPeerConnection]);
+
+  // ── 6. Signaling Event Listeners (Offer, Answer, Candidate, Peers) ───────────
   useEffect(() => {
     if (!enabled || !socket || !roomId) return;
 
@@ -487,65 +646,13 @@ export function useWebRTC({
     const sessionGen = ++callGenerationRef.current;
     isCallActiveRef.current = true;
 
-    // Local stream holder
-    let activeStream = null;
-
     // Pre-fetch ICE configuration asynchronously in parallel with media acquisition
     getOrFetchIceServers(sessionGen);
 
     // Named Signaling Handler: Creator initiates initial offer upon peer join
     const handlePeerJoined = async () => {
       if (!isCreator) return;
-      if (isMakingOfferRef.current) return;
-      if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
-
-      try {
-        isMakingOfferRef.current = true;
-        setConnectionState('connecting');
-
-        // Ensure local media is ready before offering
-        if (!localStreamRef.current) {
-          activeStream = await startMedia();
-        } else {
-          activeStream = localStreamRef.current;
-        }
-
-        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
-
-        let pc = pcRef.current;
-        if (!pc) {
-          pc = await initPeerConnection(activeStream, sessionGen);
-        }
-        if (!pc || !isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
-
-        const offer = await pc.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true,
-        });
-
-        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
-
-        await pc.setLocalDescription(offer);
-
-        if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
-
-        socket.emit('offer', {
-          roomId,
-          sdp: {
-            type: 'offer',
-            sdp: offer.sdp,
-          },
-        });
-      } catch (err) {
-        if (callGenerationRef.current === sessionGen && isCallActiveRef.current) {
-          console.error('[WebRTC] Failed to create or dispatch offer:', err);
-          setConnectionState('failed');
-        }
-      } finally {
-        if (callGenerationRef.current === sessionGen) {
-          isMakingOfferRef.current = false;
-        }
-      }
+      await initiateOffer(null, sessionGen);
     };
 
     // Named Signaling Handler: Invitee receives offer and responds with answer
@@ -558,17 +665,28 @@ export function useWebRTC({
         setConnectionState('connecting');
 
         // Ensure local media is acquired
-        if (!localStreamRef.current) {
-          activeStream = await startMedia();
-        } else {
-          activeStream = localStreamRef.current;
+        let stream = localStreamRef.current;
+        if (!stream) {
+          stream = await startMedia();
         }
 
         if (!isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
         let pc = pcRef.current;
         if (!pc) {
-          pc = await initPeerConnection(activeStream, sessionGen);
+          pc = await initPeerConnection(stream, sessionGen);
+        } else if (stream && pc.getSenders) {
+          const senders = pc.getSenders();
+          stream.getTracks().forEach((track) => {
+            const hasSender = senders.some((s) => s.track && s.track.kind === track.kind);
+            if (!hasSender) {
+              try {
+                pc.addTrack(track, stream);
+              } catch (addErr) {
+                console.warn('[WebRTC] Error attaching local track to pc:', addErr.message);
+              }
+            }
+          });
         }
         if (!pc || !isCallActiveRef.current || callGenerationRef.current !== sessionGen) return;
 
@@ -646,13 +764,20 @@ export function useWebRTC({
     // Named Signaling Handler: Remote peer left room
     const handlePeerLeft = (data) => {
       if (callGenerationRef.current !== sessionGen) return;
+      if (remoteStreamRef.current) {
+        remoteStreamRef.current.getTracks().forEach((track) => {
+          try { track.stop(); } catch {}
+        });
+        remoteStreamRef.current = null;
+      }
       setRemoteStream(null);
+      setHasRemoteVideo(false);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
       }
       setConnectionState('disconnected');
-      if (typeof onPeerLeft === 'function') {
-        onPeerLeft(data);
+      if (typeof onPeerLeftRef.current === 'function') {
+        onPeerLeftRef.current(data);
       }
     };
 
@@ -666,7 +791,11 @@ export function useWebRTC({
     // Initial media acquisition upon room enablement
     startMedia().then(async (stream) => {
       if (stream && isCallActiveRef.current && callGenerationRef.current === sessionGen) {
-        await initPeerConnection(stream, sessionGen);
+        const pc = await initPeerConnection(stream, sessionGen);
+        // If peer is already present in room when creator initializes, initiate offer immediately
+        if (isCreator && hasRemotePeer && pc && !pc.remoteDescription) {
+          await initiateOffer(pc, sessionGen);
+        }
       }
     });
 
@@ -684,32 +813,45 @@ export function useWebRTC({
     socket,
     roomId,
     isCreator,
+    initiateOffer,
     startMedia,
     initPeerConnection,
     flushCandidateQueue,
-    onPeerLeft,
     cleanup,
     getOrFetchIceServers,
   ]);
 
+  // If creator joins when peer is already present, initiate offer once peer connection is active
+  useEffect(() => {
+    if (isCreator && hasRemotePeer && isCallActiveRef.current && pcRef.current && !pcRef.current.remoteDescription && !isMakingOfferRef.current) {
+      initiateOffer(pcRef.current);
+    }
+  }, [hasRemotePeer, isCreator, initiateOffer]);
+
   // Keep local video element source synchronized
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.muted = true;
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+      localVideoRef.current.play().catch(() => {});
     }
-  }, [localStream]);
+  }, [localStream, isVideoOff]);
 
   // Keep remote video element source synchronized
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      }
       remoteVideoRef.current.play().catch(() => {
         setAutoplayBlocked(true);
       });
     }
   }, [remoteStream]);
 
-  // ── 6. Media Controls (Mute / Camera Toggle) ────────────────────────────────
+  // ── 7. Media Controls (Mute / Camera Toggle) ────────────────────────────────
   const toggleMute = useCallback(() => {
     if (!localStreamRef.current) return;
     const audioTracks = localStreamRef.current.getAudioTracks();
@@ -738,13 +880,14 @@ export function useWebRTC({
     if (remoteVideoRef.current) {
       remoteVideoRef.current.play()
         .then(() => setAutoplayBlocked(false))
-        .catch(() => {});
+        .catch((err) => console.warn('[WebRTC] resumeAutoplay failed:', err));
     }
   }, []);
 
   return {
     localStream,
     remoteStream,
+    hasRemoteVideo,
     localVideoRef,
     remoteVideoRef,
     connectionState,
