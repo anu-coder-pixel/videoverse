@@ -202,6 +202,8 @@ export function useWebRTC({
   onPeerLeftRef.current = onPeerLeft;
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
+  const hasRemotePeerRef = useRef(hasRemotePeer);
+  hasRemotePeerRef.current = hasRemotePeer;
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -766,7 +768,7 @@ export function useWebRTC({
       if (callGenerationRef.current !== sessionGen) return;
       if (remoteStreamRef.current) {
         remoteStreamRef.current.getTracks().forEach((track) => {
-          try { track.stop(); } catch {}
+          try { track.stop(); } catch { /* ignore stop errors on unmounted tracks */ }
         });
         remoteStreamRef.current = null;
       }
@@ -793,7 +795,7 @@ export function useWebRTC({
       if (stream && isCallActiveRef.current && callGenerationRef.current === sessionGen) {
         const pc = await initPeerConnection(stream, sessionGen);
         // If peer is already present in room when creator initializes, initiate offer immediately
-        if (isCreator && hasRemotePeer && pc && !pc.remoteDescription) {
+        if (isCreator && hasRemotePeerRef.current && pc && !pc.remoteDescription) {
           await initiateOffer(pc, sessionGen);
         }
       }

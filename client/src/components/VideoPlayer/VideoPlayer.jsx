@@ -605,7 +605,7 @@ export default function VideoPlayer({
     }
   };
 
-  const handleVideoError = useCallback((e) => {
+  const handleVideoError = useCallback(() => {
     setIsBuffering(false);
     setPlaying(false);
     setHasError(true);
@@ -1357,8 +1357,8 @@ export default function VideoPlayer({
               type="button"
               className="video-player__btn"
               onClick={toggleFullscreen}
-              aria-label="Toggle fullscreen"
-              title="Fullscreen (F)"
+              aria-label={fullscreen ? 'Exit fullscreen' : 'Toggle fullscreen'}
+              title={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
               id="player-fullscreen-btn"
             >
               <Maximize size={16} />

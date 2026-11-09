@@ -551,7 +551,7 @@ export function AppProvider({ children }) {
         const data = await res.json();
         return { success: true, otp: data.otp };
       }
-    } catch (err) {
+    } catch {
       // Ignore in production or offline
     }
     return { success: false };
@@ -768,7 +768,7 @@ export function AppProvider({ children }) {
         break;
       }
     }
-  }, [navigateToHome, navigateToCall, showToast]);
+  }, [navigateToHome, navigateToCall]);
 
   const filterByChannel = useCallback((channelId) => {
     setActiveChannelFilter(channelId);

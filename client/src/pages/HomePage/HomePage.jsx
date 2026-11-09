@@ -33,7 +33,6 @@ export default function HomePage() {
     openAuthModal,
     quotaInfo,
     downloadsHistory,
-    downloadsLoading,
     downloadingVideoId,
     downloadVideo,
     deleteDownloadHistory,

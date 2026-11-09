@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Video,
   VideoOff,
@@ -198,7 +198,6 @@ export default function CallPage() {
 
   const {
     localStream,
-    remoteStream,
     hasRemoteVideo,
     localVideoRef,
     remoteVideoRef,

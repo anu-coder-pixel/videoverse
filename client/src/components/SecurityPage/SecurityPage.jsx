@@ -80,7 +80,7 @@ export default function SecurityPage() {
       } else {
         showToast(data.error || 'Failed to revoke device.');
       }
-    } catch (err) {
+    } catch {
       showToast('Network error while revoking device.');
     } finally {
       setActionLoading(false);
@@ -105,7 +105,7 @@ export default function SecurityPage() {
       } else {
         showToast(data.error || 'Failed to revoke other devices.');
       }
-    } catch (err) {
+    } catch {
       showToast('Network error while revoking other devices.');
     } finally {
       setActionLoading(false);

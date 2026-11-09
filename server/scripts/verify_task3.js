@@ -111,7 +111,7 @@ async function runTests() {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // TEST 2: Free User Quota Verification (5 videos/day)
+  // TEST 2: Free User Quota Verification (1 video/day)
   // ───────────────────────────────────────────────────────────────────────────
   const quotaFreeRes = await request({
     hostname: 'localhost',
@@ -121,10 +121,10 @@ async function runTests() {
     headers: { Cookie: cookieA },
   });
 
-  if (quotaFreeRes.statusCode === 200 && quotaFreeRes.body.quota.limit === 5) {
-    results.passed.push('2. Free user quota correctly enforced at 5 distinct videos per 24 hours.');
+  if (quotaFreeRes.statusCode === 200 && quotaFreeRes.body.quota.limit === 1) {
+    results.passed.push('2. Free user quota correctly enforced at 1 distinct video per 24 hours.');
   } else {
-    results.failed.push(`2. Free user quota check failed: expected limit 5, got ${quotaFreeRes.body?.quota?.limit}`);
+    results.failed.push(`2. Free user quota check failed: expected limit 1, got ${quotaFreeRes.body?.quota?.limit}`);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
