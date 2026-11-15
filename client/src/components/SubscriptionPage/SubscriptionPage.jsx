@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Crown, Star, Zap, Award, Check, X, Download, Shield,
   ArrowRight, Loader2, CreditCard, ChevronDown, ChevronUp,
-  BadgeCheck, Calendar, Receipt, AlertCircle, RefreshCw
+  BadgeCheck, Calendar, Receipt, AlertCircle, RefreshCw, FileText
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import './SubscriptionPage.css';
@@ -138,6 +138,42 @@ export default function SubscriptionPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState(null);
+
+  // Download Invoice PDF
+  const handleDownloadInvoice = async (invoiceId) => {
+    if (!invoiceId) {
+      showToast('No invoice identifier available for this record.');
+      return;
+    }
+    setDownloadingInvoiceId(invoiceId);
+    try {
+      const res = await fetch(`/api/payments/invoices/${encodeURIComponent(invoiceId)}/download`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        showToast(errJson.error || 'Failed to download invoice PDF.');
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice-${invoiceId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast('Invoice PDF downloaded successfully!');
+    } catch (err) {
+      console.error('[Invoice Download Error]', err);
+      showToast('Network error while downloading invoice.');
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  };
 
   // Normalize user tier
   const currentTierRaw = currentUser?.subscriptionTier || 'free';
@@ -488,6 +524,7 @@ export default function SubscriptionPage() {
                     <th>Invoice #</th>
                     <th>Amount</th>
                     <th>Status</th>
+                    <th>Invoice</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -510,8 +547,29 @@ export default function SubscriptionPage() {
                       <td>₹{(item.amount / 100).toFixed(2)}</td>
                       <td>
                         <span className={`status-pill status-pill--${item.status}`}>
-                          {item.status === 'paid' ? 'Paid' : item.status === 'created' ? 'Pending' : 'Failed'}
+                          {item.status === 'paid' ? 'Paid' : item.status === 'disputed' ? 'Disputed' : item.status === 'created' ? 'Pending' : 'Failed'}
                         </span>
+                      </td>
+                      <td>
+                        {item.status === 'paid' ? (
+                          <button
+                            className="invoice-download-btn"
+                            title="Download PDF Tax Invoice"
+                            disabled={downloadingInvoiceId === (item.invoiceNumber || item.id)}
+                            onClick={() => handleDownloadInvoice(item.invoiceNumber || item.id)}
+                          >
+                            {downloadingInvoiceId === (item.invoiceNumber || item.id) ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <>
+                                <FileText size={14} />
+                                <span>PDF</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-muted text-xs">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

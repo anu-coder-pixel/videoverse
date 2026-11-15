@@ -202,7 +202,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "1.4M",
     "uploadedAt": "3 days ago",
-    "duration": "42:15",
+    "duration": "12:14",
     "likes": "48K",
     "description": "In this comprehensive tutorial, we build a production-ready full-stack application from scratch using React 19, Node.js, Express, and PostgreSQL. We cover authentication, REST APIs, deployment, and more.",
     "tags": [
@@ -214,8 +214,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "videoUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     "subtitles": [
       { "src": "/subtitles/demo-en.vtt", "srclang": "en", "label": "English" },
       { "src": "/subtitles/demo-es.vtt", "srclang": "es", "label": "Spanish" }
@@ -236,7 +236,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "5.7M",
     "uploadedAt": "1 day ago",
-    "duration": "24:10",
+    "duration": "9:57",
     "likes": "201K",
     "description": "From multimodal foundation models to autonomous coding agents, artificial intelligence is rewriting the software industry. We examine recent milestones and ethical frontiers.",
     "tags": [
@@ -247,8 +247,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 1,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
+    "fallbackUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4"
   },
   {
     "id": "vid-003",
@@ -265,7 +265,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "765K",
     "uploadedAt": "10 days ago",
-    "duration": "55:08",
+    "duration": "0:13",
     "likes": "29K",
     "description": "Master TypeScript with this deep dive into advanced types, conditional types, mapped types, template literal types, and enterprise architecture patterns.",
     "tags": [
@@ -277,7 +277,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 2,
     "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-004",
@@ -294,7 +294,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "2.9M",
     "uploadedAt": "4 days ago",
-    "duration": "38:55",
+    "duration": "0:08",
     "likes": "98K",
     "description": "React 19 eliminates manual memoization with the React Compiler and introduces Actions, useActionState, useOptimistic, and direct asset loading.",
     "tags": [
@@ -306,7 +306,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1633356122544-f134324a6cee?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 3,
     "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-005",
@@ -323,7 +323,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "1.1M",
     "uploadedAt": "2 weeks ago",
-    "duration": "1:14:20",
+    "duration": "0:10",
     "likes": "45K",
     "description": "Everything you need to know about containerizing applications, writing Dockerfiles, managing multi-container stacks with Docker Compose, and deploying to Kubernetes clusters.",
     "tags": [
@@ -335,7 +335,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1607799279861-4dd421887fb3?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 4,
     "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-006",
@@ -352,7 +352,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "3.4M",
     "uploadedAt": "3 weeks ago",
-    "duration": "59:45",
+    "duration": "0:52",
     "likes": "142K",
     "description": "A friendly step-by-step introduction to Python programming syntax, control flow, functions, object-oriented concepts, and data structures with real coding exercises.",
     "tags": [
@@ -364,7 +364,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 5,
     "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "fallbackUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4"
   },
   {
     "id": "vid-007",
@@ -381,7 +381,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "890K",
     "uploadedAt": "1 week ago",
-    "duration": "1:45:10",
+    "duration": "10:54",
     "likes": "37K",
     "description": "Build modern server-rendered web applications with Next.js 15. Covers Turbopack, dynamic IO, asynchronous request APIs, and production deployment on Vercel.",
     "tags": [
@@ -392,8 +392,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 6,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+    "videoUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
+    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
   },
   {
     "id": "vid-008",
@@ -410,7 +410,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "2.1M",
     "uploadedAt": "3 weeks ago",
-    "duration": "31:50",
+    "duration": "0:47",
     "likes": "88K",
     "description": "An eye-opening breakdown of common cyber threats: SQL injection, cross-site scripting (XSS), phishing, ransomware, and the cryptographic mechanisms protecting modern networks.",
     "tags": [
@@ -421,8 +421,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 7,
-    "videoUrl": "https://archive.org/download/Popeye_forPresident/Popeye_forPresident_512kb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-009",
@@ -439,7 +439,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "620K",
     "uploadedAt": "5 days ago",
-    "duration": "22:15",
+    "duration": "0:05",
     "likes": "31K",
     "description": "Explore the Rust programming language: borrow checker, memory safety without garbage collection, zero-cost abstractions, and fearless concurrency.",
     "tags": [
@@ -450,7 +450,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 8,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
@@ -468,7 +468,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "480K",
     "uploadedAt": "2 weeks ago",
-    "duration": "27:40",
+    "duration": "12:14",
     "likes": "19K",
     "description": "Implement real-time object detection using OpenCV and PyTorch. Learn how convolutional neural networks classify and localize objects in live camera streams.",
     "tags": [
@@ -479,8 +479,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 9,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
   },
   {
     "id": "vid-011",
@@ -497,7 +497,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "1.3M",
     "uploadedAt": "1 month ago",
-    "duration": "36:20",
+    "duration": "9:57",
     "likes": "52K",
     "description": "Comparing compute, serverless, storage, and networking across Amazon Web Services, GCP, and Microsoft Azure. Find the right cloud provider for your tech stack.",
     "tags": [
@@ -508,8 +508,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 10,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
+    "fallbackUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4"
   },
   {
     "id": "vid-012",
@@ -526,7 +526,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "540K",
     "uploadedAt": "2 weeks ago",
-    "duration": "29:10",
+    "duration": "0:08",
     "likes": "23K",
     "description": "Step-by-step guide to bidirectional event-driven communication using Socket.io and native WebSockets. Build a collaborative live chat and multiplayer room system.",
     "tags": [
@@ -538,7 +538,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 11,
     "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
-    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-013",
@@ -555,7 +555,7 @@ export const MOCK_VIDEOS = [
     "category": "Technology",
     "views": "970K",
     "uploadedAt": "3 weeks ago",
-    "duration": "26:45",
+    "duration": "0:10",
     "likes": "41K",
     "description": "When does a distributed microservices architecture actually pay off, and when does it introduce needless operational complexity? Real architectural case studies.",
     "tags": [
@@ -567,7 +567,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
     "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-014",
@@ -584,7 +584,7 @@ export const MOCK_VIDEOS = [
     "category": "Gaming",
     "views": "2.4M",
     "uploadedAt": "4 days ago",
-    "duration": "21:35",
+    "duration": "0:52",
     "likes": "96K",
     "description": "From sprawling fantasy continents to cyberpunk metropolises, we review the absolute best open-world role-playing games that deliver hundreds of hours of immersive discovery.",
     "tags": [
@@ -595,8 +595,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 1,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+    "fallbackUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4"
   },
   {
     "id": "vid-015",
@@ -613,7 +613,7 @@ export const MOCK_VIDEOS = [
     "category": "Gaming",
     "views": "1.7M",
     "uploadedAt": "1 week ago",
-    "duration": "18:50",
+    "duration": "0:47",
     "likes": "74K",
     "description": "Examining Nanite tessellation, Lumen real-time global illumination, and procedural content generation in Unreal Engine 5.5. What photorealism means for the future of interactive worlds.",
     "tags": [
@@ -624,8 +624,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 2,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-016",
@@ -642,7 +642,7 @@ export const MOCK_VIDEOS = [
     "category": "Gaming",
     "views": "3.1M",
     "uploadedAt": "5 days ago",
-    "duration": "28:12",
+    "duration": "0:13",
     "likes": "135K",
     "description": "The most electrifying tactical plays, clutch moments, and round comebacks from the world finals tournament. Commentary and tactical play-by-play analysis.",
     "tags": [
@@ -654,7 +654,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 3,
     "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-017",
@@ -671,7 +671,7 @@ export const MOCK_VIDEOS = [
     "category": "Gaming",
     "views": "820K",
     "uploadedAt": "2 weeks ago",
-    "duration": "34:25",
+    "duration": "10:54",
     "likes": "39K",
     "description": "Travel back to the 1980s and 90s to discover the engineering wizardry, pixel art masters, and cultural explosion that launched the global video games industry.",
     "tags": [
@@ -682,8 +682,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 4,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
+    "videoUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
+    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
   },
   {
     "id": "vid-018",
@@ -700,7 +700,7 @@ export const MOCK_VIDEOS = [
     "category": "Gaming",
     "views": "590K",
     "uploadedAt": "6 days ago",
-    "duration": "16:40",
+    "duration": "0:05",
     "likes": "28K",
     "description": "Uncovering five hidden indie gems with unique storytelling, hand-crafted art styles, and inventive gameplay mechanics created by passionate solo developers.",
     "tags": [
@@ -711,8 +711,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 5,
-    "videoUrl": "https://archive.org/download/Popeye_forPresident/Popeye_forPresident_512kb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-019",
@@ -729,7 +729,7 @@ export const MOCK_VIDEOS = [
     "category": "Music",
     "views": "4.1M",
     "uploadedAt": "5 days ago",
-    "duration": "2:01:33",
+    "duration": "0:47",
     "likes": "120K",
     "description": "The perfect study companion. 2 hours of carefully curated lo-fi beats, warm vinyl crackle, and soothing melodies to help you focus, code, and stay in the zone.",
     "tags": [
@@ -741,7 +741,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 6,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
     "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
@@ -759,7 +759,7 @@ export const MOCK_VIDEOS = [
     "category": "Music",
     "views": "1.2M",
     "uploadedAt": "2 weeks ago",
-    "duration": "45:10",
+    "duration": "0:05",
     "likes": "55K",
     "description": "Original acoustic guitar compositions performed in a warm studio space. Soothing fingerpicking music designed for deep relaxation and creative work.",
     "tags": [
@@ -770,8 +770,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 7,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-021",
@@ -788,7 +788,7 @@ export const MOCK_VIDEOS = [
     "category": "Music",
     "views": "2.8M",
     "uploadedAt": "1 week ago",
-    "duration": "1:15:00",
+    "duration": "0:10",
     "likes": "94K",
     "description": "Cruising neon-soaked highways under midnight skies. Atmospheric synthwave, outrun basslines, and retrofuturistic analog synthesizers.",
     "tags": [
@@ -800,7 +800,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 8,
     "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-022",
@@ -817,7 +817,7 @@ export const MOCK_VIDEOS = [
     "category": "Music",
     "views": "3.6M",
     "uploadedAt": "1 month ago",
-    "duration": "1:40:20",
+    "duration": "0:13",
     "likes": "140K",
     "description": "Chopin, Debussy, Satie, and contemporary neoclassical piano pieces recorded on a Steinway grand piano for maximum acoustic warmth and clarity.",
     "tags": [
@@ -828,8 +828,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1552422535-c45813c61732?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 9,
-    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-023",
@@ -846,7 +846,7 @@ export const MOCK_VIDEOS = [
     "category": "Music",
     "views": "1.9M",
     "uploadedAt": "3 weeks ago",
-    "duration": "52:45",
+    "duration": "0:08",
     "likes": "68K",
     "description": "Experience the electric festival atmosphere with this melodic house and progressive techno DJ set recorded live overlooking the Mediterranean coastline.",
     "tags": [
@@ -857,8 +857,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 10,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-024",
@@ -875,7 +875,7 @@ export const MOCK_VIDEOS = [
     "category": "Education",
     "views": "430K",
     "uploadedAt": "2 months ago",
-    "duration": "31:17",
+    "duration": "12:14",
     "likes": "18K",
     "description": "You don't need a multi-thousand-dollar observatory telescope to photograph celestial wonders. Learn camera settings, dark-sky planning, and image stacking software.",
     "tags": [
@@ -886,8 +886,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1507668077129-56e32842fceb?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 11,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
   },
   {
     "id": "vid-025",
@@ -904,7 +904,7 @@ export const MOCK_VIDEOS = [
     "category": "Education",
     "views": "2.7M",
     "uploadedAt": "3 weeks ago",
-    "duration": "25:40",
+    "duration": "0:52",
     "likes": "115K",
     "description": "Discover how Isaac Newton and Gottfried Leibniz visualized rates of change and cumulative areas under curves. Beautiful geometric animations explain core concepts.",
     "tags": [
@@ -915,8 +915,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+    "fallbackUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4"
   },
   {
     "id": "vid-026",
@@ -933,7 +933,7 @@ export const MOCK_VIDEOS = [
     "category": "Education",
     "views": "1.8M",
     "uploadedAt": "1 month ago",
-    "duration": "44:30",
+    "duration": "0:08",
     "likes": "72K",
     "description": "Investigating ancient quarrying techniques, astronomical alignment, ramp mechanics, and modern archaeological LiDAR scanning of Giza plateau monuments.",
     "tags": [
@@ -944,8 +944,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 1,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-027",
@@ -962,7 +962,7 @@ export const MOCK_VIDEOS = [
     "category": "Education",
     "views": "940K",
     "uploadedAt": "2 weeks ago",
-    "duration": "28:15",
+    "duration": "9:57",
     "likes": "46K",
     "description": "Learn vocal variety, pause pacing, body language, audience engagement techniques, and storytelling frameworks used by the most influential conference speakers.",
     "tags": [
@@ -973,8 +973,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1475721027785-f74eccf877e2?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 2,
-    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
+    "fallbackUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4"
   },
   {
     "id": "vid-028",
@@ -991,7 +991,7 @@ export const MOCK_VIDEOS = [
     "category": "Education",
     "views": "1.5M",
     "uploadedAt": "3 weeks ago",
-    "duration": "22:50",
+    "duration": "10:54",
     "likes": "63K",
     "description": "Spaced repetition, active recall, dual coding, and the neuroscience of long-term memory consolidation. Transform the way you retain complex subjects.",
     "tags": [
@@ -1002,7 +1002,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 3,
-    "videoUrl": "https://archive.org/download/Popeye_forPresident/Popeye_forPresident_512kb.mp4",
+    "videoUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
     "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
   },
   {
@@ -1020,7 +1020,7 @@ export const MOCK_VIDEOS = [
     "category": "Travel",
     "views": "892K",
     "uploadedAt": "1 week ago",
-    "duration": "28:40",
+    "duration": "0:47",
     "likes": "32K",
     "description": "Join me on an unforgettable journey through the breathtaking landscapes of Ladakh. From frozen high-altitude passes to ancient cliffside monasteries — every moment is magic.",
     "tags": [
@@ -1032,8 +1032,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 4,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-030",
@@ -1050,7 +1050,7 @@ export const MOCK_VIDEOS = [
     "category": "Travel",
     "views": "1.1M",
     "uploadedAt": "3 weeks ago",
-    "duration": "15:22",
+    "duration": "0:05",
     "likes": "44K",
     "description": "Bangkok is a world-renowned street food paradise. Join us as we explore night markets and alleyway stalls for authentic pad thai, mango sticky rice, and tom yum soup.",
     "tags": [
@@ -1062,8 +1062,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 5,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-031",
@@ -1080,7 +1080,7 @@ export const MOCK_VIDEOS = [
     "category": "Travel",
     "views": "1.6M",
     "uploadedAt": "2 weeks ago",
-    "duration": "32:15",
+    "duration": "0:10",
     "likes": "67K",
     "description": "Crystal alpine lakes, panoramic glacier views, and traditional mountain huts. A cinematic summer trekking itinerary through Switzerland.",
     "tags": [
@@ -1092,8 +1092,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 6,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-032",
@@ -1110,7 +1110,7 @@ export const MOCK_VIDEOS = [
     "category": "Travel",
     "views": "2.2M",
     "uploadedAt": "1 month ago",
-    "duration": "40:05",
+    "duration": "0:08",
     "likes": "89K",
     "description": "Strolling through Kyoto during peak momiji autumn foliage. Gion historic tea houses, Fushimi Inari torii gates, and peaceful stone Zen gardens.",
     "tags": [
@@ -1122,8 +1122,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 7,
-    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-033",
@@ -1140,7 +1140,7 @@ export const MOCK_VIDEOS = [
     "category": "Travel",
     "views": "1.4M",
     "uploadedAt": "3 weeks ago",
-    "duration": "26:50",
+    "duration": "0:52",
     "likes": "58K",
     "description": "Navigating the 800-mile Icelandic Ring Road. Geysers, volcanic lava fields, glacial lagoons with blue icebergs, and midnight sun vistas.",
     "tags": [
@@ -1152,8 +1152,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 8,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+    "fallbackUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4"
   },
   {
     "id": "vid-034",
@@ -1170,7 +1170,7 @@ export const MOCK_VIDEOS = [
     "category": "Travel",
     "views": "980K",
     "uploadedAt": "1 month ago",
-    "duration": "23:30",
+    "duration": "9:57",
     "likes": "41K",
     "description": "Sailing crystal turquoise waters across the Cyclades. White-washed cliffside villages, Aegean sunsets, and coastal Mediterranean dining.",
     "tags": [
@@ -1182,8 +1182,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 9,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
-    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
+    "videoUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
+    "fallbackUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4"
   },
   {
     "id": "vid-035",
@@ -1200,7 +1200,7 @@ export const MOCK_VIDEOS = [
     "category": "Science",
     "views": "2.3M",
     "uploadedAt": "2 weeks ago",
-    "duration": "19:52",
+    "duration": "0:47",
     "likes": "87K",
     "description": "Quantum mechanics sounds intimidating, but it doesn't have to be. We break down qubits, superposition, quantum entanglement, and quantum supremacy.",
     "tags": [
@@ -1211,8 +1211,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 10,
-    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-036",
@@ -1229,7 +1229,7 @@ export const MOCK_VIDEOS = [
     "category": "Science",
     "views": "3.8M",
     "uploadedAt": "1 month ago",
-    "duration": "22:45",
+    "duration": "10:54",
     "likes": "155K",
     "description": "Sleep science is far more nuanced than common wisdom suggests. Research on ultradian sleep cycles, chronotypes, adenosine buildup, and circadian rhythms.",
     "tags": [
@@ -1240,8 +1240,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 11,
-    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
+    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
   },
   {
     "id": "vid-037",
@@ -1258,7 +1258,7 @@ export const MOCK_VIDEOS = [
     "category": "Science",
     "views": "4.5M",
     "uploadedAt": "2 weeks ago",
-    "duration": "33:15",
+    "duration": "12:14",
     "likes": "188K",
     "description": "Unprecedented infrared views of early galaxies formed just 300 million years after the Big Bang, exoplanet atmospheres, and stellar nurseries.",
     "tags": [
@@ -1269,7 +1269,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "videoUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4",
     "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
   },
   {
@@ -1287,7 +1287,7 @@ export const MOCK_VIDEOS = [
     "category": "Science",
     "views": "1.7M",
     "uploadedAt": "3 weeks ago",
-    "duration": "27:08",
+    "duration": "0:10",
     "likes": "71K",
     "description": "How bacterial defense mechanisms were harnessed to edit DNA with molecular precision. Recent clinical trials treating sickle cell anemia and hereditary blindness.",
     "tags": [
@@ -1298,8 +1298,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 1,
-    "videoUrl": "https://archive.org/download/Popeye_forPresident/Popeye_forPresident_512kb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-039",
@@ -1316,7 +1316,7 @@ export const MOCK_VIDEOS = [
     "category": "Science",
     "views": "2.9M",
     "uploadedAt": "1 month ago",
-    "duration": "29:40",
+    "duration": "0:47",
     "likes": "112K",
     "description": "Descending 36,000 feet into the Mariana Trench. How extremophile organisms thrive under crushing hydrostatic pressure, freezing temperatures, and zero sunlight.",
     "tags": [
@@ -1327,7 +1327,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 2,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
     "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
@@ -1345,7 +1345,7 @@ export const MOCK_VIDEOS = [
     "category": "Cooking",
     "views": "680K",
     "uploadedAt": "3 weeks ago",
-    "duration": "18:30",
+    "duration": "0:05",
     "likes": "27K",
     "description": "Authentic Neapolitan pizza requires high heat, Caputo 00 flour, and slow fermentation. Learn how to achieve leopard-spotted crusts in a home kitchen.",
     "tags": [
@@ -1357,8 +1357,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 3,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-041",
@@ -1375,7 +1375,7 @@ export const MOCK_VIDEOS = [
     "category": "Cooking",
     "views": "1.9M",
     "uploadedAt": "1 week ago",
-    "duration": "25:15",
+    "duration": "0:13",
     "likes": "82K",
     "description": "Simmering rich 18-hour pork bone broth, tender chashu pork belly, marinated ramen eggs, and hand-cut alkaline noodles. The definitive ramen guide.",
     "tags": [
@@ -1387,8 +1387,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 4,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-042",
@@ -1405,7 +1405,7 @@ export const MOCK_VIDEOS = [
     "category": "Cooking",
     "views": "1.3M",
     "uploadedAt": "2 weeks ago",
-    "duration": "22:40",
+    "duration": "0:08",
     "likes": "54K",
     "description": "Everything you need to master sourdough: starter feeding cycles, stretch-and-folds, shaping technique, scoring patterns, and Dutch oven baking.",
     "tags": [
@@ -1416,8 +1416,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 5,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-043",
@@ -1434,7 +1434,7 @@ export const MOCK_VIDEOS = [
     "category": "Cooking",
     "views": "2.1M",
     "uploadedAt": "1 month ago",
-    "duration": "30:10",
+    "duration": "0:47",
     "likes": "91K",
     "description": "Master laminating butter blocks into yeast dough. Learn folding turns, dough temperature control, proofing signs, and achieving honeycombed interiors.",
     "tags": [
@@ -1446,7 +1446,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 6,
-    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
     "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
@@ -1464,7 +1464,7 @@ export const MOCK_VIDEOS = [
     "category": "Cooking",
     "views": "870K",
     "uploadedAt": "4 days ago",
-    "duration": "16:50",
+    "duration": "0:08",
     "likes": "38K",
     "description": "Marinating flank steak with citrus, garlic, and Mexican spices over blazing charcoal. Paired with charred salsa verde and warm heirloom corn tortillas.",
     "tags": [
@@ -1476,8 +1476,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 7,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-045",
@@ -1494,7 +1494,7 @@ export const MOCK_VIDEOS = [
     "category": "Sports",
     "views": "1.5M",
     "uploadedAt": "3 days ago",
-    "duration": "17:25",
+    "duration": "0:05",
     "likes": "59K",
     "description": "Detailed video analysis of passing lanes, counter-pressing triggers, inverted fullbacks, and defensive transition structures in top European football.",
     "tags": [
@@ -1506,8 +1506,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 8,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-046",
@@ -1524,7 +1524,7 @@ export const MOCK_VIDEOS = [
     "category": "Sports",
     "views": "2.8M",
     "uploadedAt": "1 week ago",
-    "duration": "20:15",
+    "duration": "0:13",
     "likes": "118K",
     "description": "Buzzer beaters, ankle breakers, and legendary fourth-quarter comebacks that defined basketball history. Slow-motion breakdowns and original broadcast audio.",
     "tags": [
@@ -1536,8 +1536,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 9,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-047",
@@ -1554,7 +1554,7 @@ export const MOCK_VIDEOS = [
     "category": "Sports",
     "views": "640K",
     "uploadedAt": "2 weeks ago",
-    "duration": "35:40",
+    "duration": "0:08",
     "likes": "29K",
     "description": "Periodized mileage buildup, VO2 max interval sessions, race day nutrition fueling strategies, and injury prevention routines for distance runners.",
     "tags": [
@@ -1566,8 +1566,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 10,
-    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-048",
@@ -1584,7 +1584,7 @@ export const MOCK_VIDEOS = [
     "category": "Sports",
     "views": "1.9M",
     "uploadedAt": "5 days ago",
-    "duration": "14:50",
+    "duration": "0:47",
     "likes": "84K",
     "description": "Dropping onto vertical spine walls in the Alaskan Chugach range. High-velocity freeriding through deep powder filmed with 4K drone cinematography.",
     "tags": [
@@ -1595,8 +1595,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1565992441121-4367c2967103?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 11,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
-    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-049",
@@ -1613,7 +1613,7 @@ export const MOCK_VIDEOS = [
     "category": "Sports",
     "views": "1.2M",
     "uploadedAt": "3 weeks ago",
-    "duration": "22:10",
+    "duration": "0:05",
     "likes": "51K",
     "description": "Epic 40-shot baseline rallies, miraculous drop shots, and championship-point nerves from Wimbledon, Roland Garros, and the US Open.",
     "tags": [
@@ -1625,8 +1625,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
-    "videoUrl": "https://archive.org/download/Popeye_forPresident/Popeye_forPresident_512kb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-050",
@@ -1643,7 +1643,7 @@ export const MOCK_VIDEOS = [
     "category": "Animation",
     "views": "3.3M",
     "uploadedAt": "2 weeks ago",
-    "duration": "08:45",
+    "duration": "0:52",
     "likes": "165K",
     "description": "A whimsical story of a tiny spark of light discovering an ancient mechanical forest. Hand-crafted character modeling and orchestral musical scoring.",
     "tags": [
@@ -1656,7 +1656,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 1,
     "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "fallbackUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4"
   },
   {
     "id": "vid-051",
@@ -1673,7 +1673,7 @@ export const MOCK_VIDEOS = [
     "category": "Animation",
     "views": "710K",
     "uploadedAt": "1 week ago",
-    "duration": "29:30",
+    "duration": "12:14",
     "likes": "34K",
     "description": "Learn to build infinite procedural terrain, vegetation scatter, and stylized shading shaders in Blender without destructive sculpting.",
     "tags": [
@@ -1684,8 +1684,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 2,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
   },
   {
     "id": "vid-052",
@@ -1702,7 +1702,7 @@ export const MOCK_VIDEOS = [
     "category": "Animation",
     "views": "1.4M",
     "uploadedAt": "3 weeks ago",
-    "duration": "19:40",
+    "duration": "0:10",
     "likes": "62K",
     "description": "Analyzing impact frames, smear frames, perspective distortion, and kinetic choreography in legendary Japanese animation sequences.",
     "tags": [
@@ -1713,8 +1713,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 3,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-053",
@@ -1731,7 +1731,7 @@ export const MOCK_VIDEOS = [
     "category": "Animation",
     "views": "490K",
     "uploadedAt": "4 days ago",
-    "duration": "04:15",
+    "duration": "10:54",
     "likes": "22K",
     "description": "A dynamic showcase of kinetic type, 3D brand IDs, title sequences, and UI motion design created in After Effects and Cinema 4D.",
     "tags": [
@@ -1742,7 +1742,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 4,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "videoUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
     "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
   },
   {
@@ -1760,7 +1760,7 @@ export const MOCK_VIDEOS = [
     "category": "Animation",
     "views": "880K",
     "uploadedAt": "1 month ago",
-    "duration": "24:50",
+    "duration": "0:08",
     "likes": "45K",
     "description": "Armature fabrication, silicone molding, replacement mouth sets, and shooting 24 frames per second by hand with dragonframe software.",
     "tags": [
@@ -1771,8 +1771,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 5,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-055",
@@ -1789,7 +1789,7 @@ export const MOCK_VIDEOS = [
     "category": "Documentary",
     "views": "2.5M",
     "uploadedAt": "2 weeks ago",
-    "duration": "52:10",
+    "duration": "0:47",
     "likes": "109K",
     "description": "An intimate wildlife expedition into the heart of the Amazon basin. Documenting jaguars, harpy eagles, poison dart frogs, and Indigenous forest stewards.",
     "tags": [
@@ -1802,7 +1802,7 @@ export const MOCK_VIDEOS = [
     "thumbnailUrl": "https://images.unsplash.com/photo-1534567153574-2b12153a87f0?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 6,
     "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-056",
@@ -1819,7 +1819,7 @@ export const MOCK_VIDEOS = [
     "category": "Documentary",
     "views": "1.8M",
     "uploadedAt": "3 weeks ago",
-    "duration": "48:30",
+    "duration": "0:05",
     "likes": "77K",
     "description": "The untold corporate battles, revolutionary prototypes, and catastrophic pivot decisions that reshaped personal computing from garages to Wall Street.",
     "tags": [
@@ -1830,8 +1830,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 7,
-    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-057",
@@ -1848,7 +1848,7 @@ export const MOCK_VIDEOS = [
     "category": "Documentary",
     "views": "1.1M",
     "uploadedAt": "1 month ago",
-    "duration": "38:15",
+    "duration": "0:13",
     "likes": "46K",
     "description": "Following Tuareg camel caravans traversing towering sand dunes and discovering ancient oases in North Africa. A story of human resilience.",
     "tags": [
@@ -1860,8 +1860,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 8,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-058",
@@ -1878,7 +1878,7 @@ export const MOCK_VIDEOS = [
     "category": "Documentary",
     "views": "3.7M",
     "uploadedAt": "2 weeks ago",
-    "duration": "46:40",
+    "duration": "0:47",
     "likes": "162K",
     "description": "Two million wildebeest and zebras crossing crocodile-infested Mara River waters while prides of lions and cheetahs stalk the savannah plains.",
     "tags": [
@@ -1890,8 +1890,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1546182990-dffeafbe841d?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 9,
-    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-059",
@@ -1908,7 +1908,7 @@ export const MOCK_VIDEOS = [
     "category": "Documentary",
     "views": "840K",
     "uploadedAt": "1 month ago",
-    "duration": "36:00",
+    "duration": "0:05",
     "likes": "38K",
     "description": "High-resolution multispectral scanning of the Mona Lisa, Vitruvian Man, and secret sketchbooks revealing groundbreaking anatomical and optical insights.",
     "tags": [
@@ -1919,8 +1919,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 10,
-    "videoUrl": "https://archive.org/download/Popeye_forPresident/Popeye_forPresident_512kb.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
   },
   {
     "id": "vid-060",
@@ -1937,7 +1937,7 @@ export const MOCK_VIDEOS = [
     "category": "Comedy",
     "views": "2.6M",
     "uploadedAt": "6 days ago",
-    "duration": "18:20",
+    "duration": "0:10",
     "likes": "145K",
     "description": "A hilarious live stand-up comedy special tackling microwave etiquette, group chats, remote work Zoom faux pas, and budgeting nightmares.",
     "tags": [
@@ -1949,8 +1949,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1585699324551-f6c309eedeca?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 11,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-061",
@@ -1967,7 +1967,7 @@ export const MOCK_VIDEOS = [
     "category": "Comedy",
     "views": "4.2M",
     "uploadedAt": "1 week ago",
-    "duration": "06:45",
+    "duration": "12:14",
     "likes": "230K",
     "description": "What happens when a software engineer tells the 100% unvarnished truth about copying from Stack Overflow, inverted binary trees, and fixing bugs by restarting.",
     "tags": [
@@ -1979,8 +1979,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 0,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
   },
   {
     "id": "vid-062",
@@ -1997,7 +1997,7 @@ export const MOCK_VIDEOS = [
     "category": "Comedy",
     "views": "1.5M",
     "uploadedAt": "2 weeks ago",
-    "duration": "05:30",
+    "duration": "0:10",
     "likes": "88K",
     "description": "A customer attempts to order a simple drip coffee in an artisanal coffee roastery with 45 plant milks, temperature degrees, and bespoke oat infusions.",
     "tags": [
@@ -2008,8 +2008,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 1,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-063",
@@ -2026,7 +2026,7 @@ export const MOCK_VIDEOS = [
     "category": "Comedy",
     "views": "920K",
     "uploadedAt": "3 weeks ago",
-    "duration": "27:10",
+    "duration": "0:08",
     "likes": "47K",
     "description": "Unscripted brilliance where audience suggestions turn into musical showdowns, absurd detective mysteries, and spontaneous physical comedy.",
     "tags": [
@@ -2037,8 +2037,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1514306191717-452ec28c7814?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 2,
-    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-064",
@@ -2055,7 +2055,7 @@ export const MOCK_VIDEOS = [
     "category": "Comedy",
     "views": "3.1M",
     "uploadedAt": "1 month ago",
-    "duration": "07:55",
+    "duration": "9:57",
     "likes": "172K",
     "description": "Shoe removal panics, boarding pass misplacements, laptops stuck in bins, and the person carrying a giant bottle of shampoo. We have all been there.",
     "tags": [
@@ -2066,8 +2066,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1527224857830-43a7acc85260?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 3,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
-    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
+    "videoUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
+    "fallbackUrl": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4"
   },
   {
     "id": "vid-065",
@@ -2084,7 +2084,7 @@ export const MOCK_VIDEOS = [
     "category": "News",
     "views": "1.4M",
     "uploadedAt": "1 day ago",
-    "duration": "18:40",
+    "duration": "0:10",
     "likes": "49K",
     "description": "Comprehensive analysis of central bank monetary policy, global supply chain reshoring, energy market shifts, and technology venture capital trends.",
     "tags": [
@@ -2096,8 +2096,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 4,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "fallbackUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   {
     "id": "vid-066",
@@ -2114,7 +2114,7 @@ export const MOCK_VIDEOS = [
     "category": "News",
     "views": "2.2M",
     "uploadedAt": "4 days ago",
-    "duration": "22:15",
+    "duration": "0:47",
     "likes": "95K",
     "description": "International Artemis program milestones, reusable super-heavy rocket flights, and the private space stations slated for low-Earth orbit deployment.",
     "tags": [
@@ -2126,8 +2126,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 5,
-    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-067",
@@ -2144,7 +2144,7 @@ export const MOCK_VIDEOS = [
     "category": "News",
     "views": "980K",
     "uploadedAt": "6 days ago",
-    "duration": "15:50",
+    "duration": "0:08",
     "likes": "42K",
     "description": "Grid-scale battery storage breakthroughs and offshore wind installations drive a historic shift toward clean electric power across five continents.",
     "tags": [
@@ -2156,8 +2156,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 6,
-    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/movie.mp4"
+    "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4",
+    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   {
     "id": "vid-068",
@@ -2174,7 +2174,7 @@ export const MOCK_VIDEOS = [
     "category": "News",
     "views": "1.7M",
     "uploadedAt": "2 weeks ago",
-    "duration": "25:30",
+    "duration": "0:47",
     "likes": "64K",
     "description": "Leading researchers and tech CEOs debate open-source AI models, digital privacy regulations, quantum breakthroughs, and biotechnology ethics.",
     "tags": [
@@ -2185,8 +2185,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 7,
-    "videoUrl": "https://media.w3.org/2010/05/sintel/trailer.mp4",
-    "fallbackUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4"
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
+    "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   },
   {
     "id": "vid-069",
@@ -2203,7 +2203,7 @@ export const MOCK_VIDEOS = [
     "category": "Fitness",
     "views": "2.7M",
     "uploadedAt": "5 days ago",
-    "duration": "31:20",
+    "duration": "0:13",
     "likes": "135K",
     "description": "High intensity interval training with built-in rest periods. Burn calories, build cardiovascular endurance, and strengthen your core right in your living room.",
     "tags": [
@@ -2215,8 +2215,8 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 8,
-    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
-    "fallbackUrl": "https://www.w3schools.com/html/mov_bbb.mp4"
+    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "fallbackUrl": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
   },
   {
     "id": "vid-070",
@@ -2233,7 +2233,7 @@ export const MOCK_VIDEOS = [
     "category": "Fitness",
     "views": "1.1M",
     "uploadedAt": "2 weeks ago",
-    "duration": "19:45",
+    "duration": "0:05",
     "likes": "58K",
     "description": "Progressive bodyweight strength training for shoulders, back, and core. Resistance band assists, scapular retractions, and proper joint stabilization.",
     "tags": [
@@ -2262,7 +2262,7 @@ export const MOCK_VIDEOS = [
     "category": "Fitness",
     "views": "3.9M",
     "uploadedAt": "3 weeks ago",
-    "duration": "15:10",
+    "duration": "10:54",
     "likes": "195K",
     "description": "Relieve lower back tightness, open stiff hips, and correct forward head posture with this gentle 15-minute follow-along physical therapy routine.",
     "tags": [
@@ -2274,7 +2274,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 10,
-    "videoUrl": "https://www.w3schools.com/html/movie.mp4",
+    "videoUrl": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
     "fallbackUrl": "https://vjs.zencdn.net/v/oceans.mp4"
   },
   {
@@ -2292,7 +2292,7 @@ export const MOCK_VIDEOS = [
     "category": "Fitness",
     "views": "1.6M",
     "uploadedAt": "1 month ago",
-    "duration": "23:45",
+    "duration": "0:47",
     "likes": "74K",
     "description": "Evidence-based breakdown of mechanical tension, metabolic stress, protein synthesis timing, progressive overload, and effective recovery protocols.",
     "tags": [
@@ -2303,7 +2303,7 @@ export const MOCK_VIDEOS = [
     ],
     "thumbnailUrl": "https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&w=640&q=80",
     "thumbnailIndex": 11,
-    "videoUrl": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    "videoUrl": "https://vjs.zencdn.net/v/oceans.mp4",
     "fallbackUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4"
   }
 ];
@@ -2378,6 +2378,7 @@ export const SIDEBAR_SECTIONS = [
       { id: 'watch-later', label: 'Watch Later', icon: 'Clock', path: '/watch-later' },
       { id: 'liked', label: 'Liked Videos', icon: 'ThumbsUp', path: '/liked' },
       { id: 'downloads', label: 'Downloads', icon: 'Download', path: '/downloads' },
+      { id: 'my-videos', label: 'My Videos', icon: 'Upload', path: '/my-videos' },
       { id: 'security', label: 'Security & Devices', icon: 'Shield', path: '/security' },
       { id: 'upgrade', label: 'Upgrade Plan', icon: 'Sparkles', path: '/upgrade' },
     ],

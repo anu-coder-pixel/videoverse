@@ -1,4 +1,12 @@
 const mongoose = require('mongoose');
+const dns = require('dns');
+
+// On Windows, Node c-ares DNS often fails SRV lookups for mongodb+srv unless explicit servers are specified
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch {
+  // Graceful fallback if environment does not allow setting custom DNS
+}
 
 /**
  * Connects to MongoDB using Mongoose.

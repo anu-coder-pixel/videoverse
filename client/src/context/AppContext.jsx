@@ -221,7 +221,7 @@ function getInitialNavigationState() {
 
 export function AppProvider({ children }) {
   // ── Fetch videos from backend (with local fallback) ─────────────────────
-  const { videos, loading: videosLoading, usingFallback } = useVideos();
+  const { videos, loading: videosLoading, usingFallback, refetch: refetchVideos } = useVideos();
 
   // ── Navigation state with refresh/reopen persistence ────────────────────
   const initialNav = getInitialNavigationState();
@@ -335,6 +335,33 @@ export function AppProvider({ children }) {
 
   const openAuthModal = useCallback(() => setAuthModalOpen(true), []);
   const closeAuthModal = useCallback(() => setAuthModalOpen(false), []);
+
+  // ── Video Upload & Creator Studio (Phase 5 Module 4) ────────────────
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [creatorVideos, setCreatorVideos] = useState([]);
+  const [creatorVideosLoading, setCreatorVideosLoading] = useState(false);
+
+  const openUploadModal = useCallback(() => setUploadModalOpen(true), []);
+  const closeUploadModal = useCallback(() => setUploadModalOpen(false), []);
+
+  const fetchCreatorVideos = useCallback(async () => {
+    if (!currentUser) {
+      setCreatorVideos([]);
+      return;
+    }
+    setCreatorVideosLoading(true);
+    try {
+      const res = await fetch('/api/upload/my/videos', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setCreatorVideos(data.videos || []);
+      }
+    } catch (err) {
+      console.warn('[AppContext] Failed to fetch creator videos:', err.message);
+    } finally {
+      setCreatorVideosLoading(false);
+    }
+  }, [currentUser]);
 
   // ── Toast notification for user actions ──────────────────────────────
   const [appToast, setAppToast] = useState(null);
@@ -744,6 +771,12 @@ export function AppProvider({ children }) {
         setActiveChannelFilter(null);
         navigateToHome();
         break;
+      case 'my-videos':
+        setCurrentView('my-videos');
+        setActiveCategory('My Videos');
+        setActiveChannelFilter(null);
+        navigateToHome();
+        break;
       case 'downloads':
         setCurrentView('downloads');
         setActiveCategory('Downloads');
@@ -753,6 +786,12 @@ export function AppProvider({ children }) {
       case 'security':
         setCurrentView('security');
         setActiveCategory('Security');
+        setActiveChannelFilter(null);
+        navigateToHome();
+        break;
+      case 'admin':
+        setCurrentView('admin');
+        setActiveCategory('Admin');
         setActiveChannelFilter(null);
         navigateToHome();
         break;
@@ -928,6 +967,24 @@ export function AppProvider({ children }) {
     }
   }, [currentUser, showToast]);
 
+  const removeFromHistory = useCallback((videoId) => {
+    if (!videoId || typeof videoId !== 'string') return;
+    setWatchHistory(prev => {
+      const next = prev.filter(id => id !== videoId);
+      saveArrayToStorage(STORAGE_KEYS.HISTORY, next);
+      return next;
+    });
+    showToast('Removed from watch history');
+
+    // If authenticated, sync with MongoDB
+    if (currentUser) {
+      fetch(`/api/auth/history/${encodeURIComponent(videoId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      }).catch(err => console.warn('[AppContext] Failed to remove video from history in MongoDB:', err));
+    }
+  }, [currentUser, showToast]);
+
   // ── Controlled Video Downloads (Task 2) ──────────────────────────────────
   const [quotaInfo, setQuotaInfo] = useState({
     limit: 1,
@@ -1017,10 +1074,33 @@ export function AppProvider({ children }) {
     }
 
     setDownloadingVideoId(video.id);
-    showToast(`⏳ Preparing secure download: "${video.title.slice(0, 28)}..."`);
+    showToast(`⏳ Preparing secure watermarked download: "${video.title ? video.title.slice(0, 26) : 'Video'}..."`);
 
     try {
-      const res = await fetch(`/api/videos/${video.id}/download`, {
+      // Step 1: Request signed download ticket (enforces quota and CAS atomically)
+      const ticketRes = await fetch(`/api/videos/${video.id}/download-ticket`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+
+      let downloadUrl = `/api/videos/${video.id}/download`;
+      if (ticketRes.ok) {
+        const ticketData = await ticketRes.json();
+        if (ticketData.downloadUrl) {
+          downloadUrl = ticketData.downloadUrl;
+        }
+      } else {
+        const errData = await ticketRes.json().catch(() => ({}));
+        const errMsg = errData.error || `Download failed with HTTP ${ticketRes.status}`;
+        showToast(`❌ ${errMsg}`, 4500);
+        fetchDownloadStatus();
+        fetchDownloadHistory();
+        return;
+      }
+
+      // Step 2: Stream watermarked video from signed download URL
+      const res = await fetch(downloadUrl, {
         credentials: 'include',
       });
 
@@ -1029,6 +1109,7 @@ export function AppProvider({ children }) {
         const errMsg = errData.error || `Download failed with HTTP ${res.status}`;
         showToast(`❌ ${errMsg}`, 4500);
         fetchDownloadStatus();
+        fetchDownloadHistory();
         return;
       }
 
@@ -1050,7 +1131,7 @@ export function AppProvider({ children }) {
       document.body.removeChild(downloadLink);
       window.URL.revokeObjectURL(blobUrl);
 
-      showToast(`✅ "${video.title.slice(0, 25)}..." downloaded to your device!`, 3500);
+      showToast(`✅ "${video.title ? video.title.slice(0, 24) : 'Video'}..." downloaded with your account watermark!`, 4000);
       fetchDownloadStatus();
       fetchDownloadHistory();
     } catch (err) {
@@ -1060,6 +1141,29 @@ export function AppProvider({ children }) {
       setDownloadingVideoId(null);
     }
   }, [currentUser, openAuthModal, showToast, fetchDownloadStatus, fetchDownloadHistory]);
+
+  const requestOfflineAuthorization = useCallback(async (downloadId) => {
+    if (!downloadId) return null;
+    try {
+      const res = await fetch(`/api/downloads/${downloadId}/offline-auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(`❌ ${data.error || 'Failed to authorize offline playback'}`, 4000);
+        return null;
+      }
+      showToast(`📱 Offline playback authorized until ${new Date(data.expiresAt).toLocaleDateString()}!`, 4000);
+      fetchDownloadHistory();
+      return data;
+    } catch (err) {
+      console.error('[Offline Auth Error]', err);
+      showToast('❌ Failed to request offline playback license.');
+      return null;
+    }
+  }, [showToast, fetchDownloadHistory]);
 
   // ── Razorpay Subscription Upgrade (Task 3) ───────────────────────────────
   /**
@@ -1270,6 +1374,7 @@ export function AppProvider({ children }) {
     toggleWatchLater,
     watchHistory,
     clearHistory,
+    removeFromHistory,
 
     // User Authentication & Profiles (Task 4)
     currentUser,
@@ -1298,11 +1403,21 @@ export function AppProvider({ children }) {
     fetchDownloadHistory,
     deleteDownloadHistory,
     downloadVideo,
+    requestOfflineAuthorization,
 
     // Subscriptions & Payments (Task 3)
     paymentLoading,
     upgradeTier,
     cancelSubscription,
+
+    // Video Upload & Creator Studio (Phase 5 Module 4)
+    refetchVideos,
+    uploadModalOpen,
+    openUploadModal,
+    closeUploadModal,
+    creatorVideos,
+    creatorVideosLoading,
+    fetchCreatorVideos,
 
     // Global App Toast
     appToast,

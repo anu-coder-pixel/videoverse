@@ -8,6 +8,12 @@ const userSchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'Name cannot exceed 50 characters'],
   },
+  username: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    index: true,
+  },
   email: {
     type: String,
     required: [true, 'Please provide an email address'],
@@ -67,6 +73,26 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  // Role-based access control
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user',
+  },
+  // Phase 2 Step 6: Administrative Account Suspension
+  isSuspended: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  suspendedReason: {
+    type: String,
+    default: null,
+  },
+  suspendedAt: {
+    type: Date,
+    default: null,
+  },
   // User activity linked directly to the account
   likedVideos: {
     type: [String],
@@ -95,6 +121,12 @@ const userSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now,
+  },
+  // Version guard for quota reservations and Gold path concurrency
+  quotaReservationVersion: {
+    type: Number,
+    default: 0,
+    index: true,
   },
 });
 
@@ -150,10 +182,15 @@ userSchema.methods.toSafeObject = function () {
   return {
     id: this._id.toString(),
     name: this.name,
+    username: this.username || this.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
     email: this.email,
     avatar: this.avatar,
     avatarColor: this.avatarColor,
     initials: this.initials,
+    role: this.role || 'user',
+    isSuspended: Boolean(this.isSuspended),
+    suspendedReason: this.suspendedReason || null,
+    suspendedAt: this.suspendedAt || null,
     themePreference: this.themePreference,
     subscriptionTier: effectiveTier,
     normalizedSubscriptionTier: normalizedTier,

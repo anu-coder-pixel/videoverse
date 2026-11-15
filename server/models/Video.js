@@ -163,6 +163,113 @@ const VideoSchema = new mongoose.Schema(
       ],
       default: [],
     },
+
+    // ── Phase 5 Module 4: Creator & Upload Processing Fields ──────────────
+    uploaderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
+
+    processingStatus: {
+      type: String,
+      enum: ['uploading', 'queued', 'processing', 'ready', 'failed'],
+      default: 'ready',
+      index: true,
+    },
+
+    processingProgress: {
+      type: Number,
+      default: 100,
+      min: 0,
+      max: 100,
+    },
+
+    processingError: {
+      type: String,
+      default: '',
+    },
+
+    // ── Phase 2 Step 4: Adaptive HLS & Sprite Fields ──────────────────────
+    hlsMasterPlaylist: {
+      type: String,
+      default: '',
+    },
+
+    hlsQualities: {
+      type: [String],
+      default: [],
+    },
+
+    thumbnailSpriteUrl: {
+      type: String,
+      default: '',
+    },
+
+    thumbnailVttUrl: {
+      type: String,
+      default: '',
+    },
+
+    transcodingRetries: {
+      type: Number,
+      default: 0,
+    },
+
+    fileSize: {
+      type: Number,
+      default: 0,
+    },
+
+    mimeType: {
+      type: String,
+      default: '',
+    },
+
+    resolution: {
+      type: String,
+      default: '1080p',
+    },
+
+    storagePath: {
+      type: String,
+      default: '',
+    },
+
+    thumbnailType: {
+      type: String,
+      enum: ['extracted', 'placeholder_svg', 'external'],
+      default: 'external',
+    },
+
+    durationEstimated: {
+      type: Boolean,
+      default: false,
+    },
+
+    resolutionEstimated: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ── Phase 2 Step 6: Admin Management & Publishing Controls ──────────
+    isPublished: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+
+    isRemovedByAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    adminRemovalReason: {
+      type: String,
+      default: null,
+    },
   },
   {
     // Automatically adds `createdAt` and `updatedAt` timestamps.

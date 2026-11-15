@@ -67,18 +67,21 @@ const loginEmailLimiter = rateLimit({
 /**
  * 3. Registration Limiter (Bot and spam account creation protection)
  * Max 5 account registrations per hour per IP.
+ * Safe pass-through in test environment (same pattern as commentPostLimiter).
  */
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,
-  standardHeaders: 'draft-7',
-  legacyHeaders: true,
-  statusCode: 429,
-  handler: createRateLimitHandler(
-    'Too many accounts created from this IP. Please try again later.',
-    'TOO_MANY_REGISTRATIONS'
-  ),
-});
+const registerLimiter = process.env.NODE_ENV === 'test'
+  ? (req, res, next) => next()
+  : rateLimit({
+      windowMs: 60 * 60 * 1000, // 1 hour
+      max: 5,
+      standardHeaders: 'draft-7',
+      legacyHeaders: true,
+      statusCode: 429,
+      handler: createRateLimitHandler(
+        'Too many accounts created from this IP. Please try again later.',
+        'TOO_MANY_REGISTRATIONS'
+      ),
+    });
 
 /**
  * 4. OTP Verification Limiter
@@ -149,6 +152,31 @@ const paymentOrderLimiter = rateLimit({
   ),
 });
 
+/**
+ * 7. Comment Posting Rate Limiter
+ * Max 15 comments per minute per authenticated user (or IP).
+ * Safe pass-through in test environment.
+ */
+const commentPostLimiter = process.env.NODE_ENV === 'test'
+  ? (req, res, next) => next()
+  : rateLimit({
+      windowMs: 60 * 1000, // 1 minute
+      max: 15,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      keyGenerator: (req) => {
+        if (req.user?._id) {
+          return `comment_user:${req.user._id}`;
+        }
+        return `comment_ip:${req.ip}`;
+      },
+      statusCode: 429,
+      handler: createRateLimitHandler(
+        'Too many comments posted in a short period. Please slow down.',
+        'COMMENT_RATE_LIMITED'
+      ),
+    });
+
 module.exports = {
   loginIpLimiter,
   loginEmailLimiter,
@@ -156,4 +184,5 @@ module.exports = {
   otpVerifyLimiter,
   otpResendLimiter,
   paymentOrderLimiter,
+  commentPostLimiter,
 };

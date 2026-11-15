@@ -72,6 +72,29 @@ const commentSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  deletedAt: {
+    type: Date,
+    default: null,
+  },
+  mentions: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    username: {
+      type: String,
+      trim: true,
+    },
+    name: {
+      type: String,
+      trim: true,
+    },
+  }],
   moderationStatus: {
     type: String,
     enum: ['approved', 'flagged', 'rejected'],
@@ -81,6 +104,12 @@ const commentSchema = new mongoose.Schema({
   moderationReason: {
     type: String,
     default: '',
+  },
+  reportCount: {
+    type: Number,
+    default: 0,
+    min: 0,
+    index: true,
   },
   createdAt: {
     type: Date,
@@ -131,8 +160,17 @@ commentSchema.methods.toSafeObject = function (currentUserId = null) {
     hasDisliked: !!hasDisliked,
     isEdited: !!this.isEdited,
     editedAt: this.editedAt,
+    isDeleted: !!this.isDeleted,
+    deletedAt: this.deletedAt || null,
     location: this.location || '',
     parentId: this.parentId ? this.parentId.toString() : null,
+    mentions: Array.isArray(this.mentions) ? this.mentions.map(m => ({
+      userId: m.userId ? m.userId.toString() : null,
+      username: m.username || '',
+      name: m.name || '',
+    })) : [],
+    reportCount: this.reportCount || 0,
+    canEdit: (Date.now() - new Date(this.createdAt).getTime()) < 15 * 60 * 1000,
     createdAt: this.createdAt,
     timeAgo: formatTimeAgo(this.createdAt),
   };

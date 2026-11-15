@@ -1,10 +1,16 @@
 import { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { getThumbnailStyle } from '../../data/mockData';
 import './VideoCard.css';
 
-export default function VideoCard({ video, compact = false, style }) {
+export default function VideoCard({
+  video,
+  compact = false,
+  style,
+  onRemove,
+  removeTooltip = 'Remove',
+}) {
   const { navigateToWatch } = useApp();
   const [hasImgError, setHasImgError] = useState(false);
 
@@ -66,6 +72,22 @@ export default function VideoCard({ video, compact = false, style }) {
         <span className="video-card__duration" aria-label={`Duration: ${video.duration}`}>
           {video.duration}
         </span>
+
+        {/* Quick remove action button */}
+        {onRemove && (
+          <button
+            type="button"
+            className="video-card__remove-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(video.id);
+            }}
+            title={removeTooltip}
+            aria-label={removeTooltip}
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* Info row */}

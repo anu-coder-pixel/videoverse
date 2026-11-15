@@ -2,7 +2,8 @@ import {
   Home, TrendingUp, PlaySquare, History, Clock, ThumbsUp,
   Download, Music, Gamepad2, Atom, BookOpen, ChevronRight,
   ChevronLeft, Laptop, Compass, Utensils, Trophy, Film,
-  Globe, Smile, Newspaper, Dumbbell, User, Sparkles, Shield, Video
+  Globe, Smile, Newspaper, Dumbbell, User, Sparkles, Shield, Video,
+  Upload, BarChart3
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { SIDEBAR_SECTIONS, MOCK_CHANNELS } from '../../data/mockData';
@@ -17,6 +18,7 @@ const ICON_MAP = {
   Clock,
   ThumbsUp,
   Download,
+  Upload,
   Shield,
   Video,
   Laptop,
@@ -34,6 +36,7 @@ const ICON_MAP = {
   Dumbbell,
   User,
   Sparkles,
+  BarChart3,
 };
 
 // YouTube-style mini sidebar items for collapsed mode
@@ -77,7 +80,9 @@ export default function Sidebar() {
     if (itemId === 'watch-later') return currentView === 'watch-later';
     if (itemId === 'liked') return currentView === 'liked';
     if (itemId === 'downloads') return currentView === 'downloads';
+    if (itemId === 'my-videos') return currentView === 'my-videos';
     if (itemId === 'security') return currentView === 'security';
+    if (itemId === 'admin') return currentView === 'admin';
     if (itemId === 'upgrade') return currentView === 'upgrade';
     return activeCategory.toLowerCase() === itemId.toLowerCase();
   }
@@ -183,6 +188,28 @@ export default function Sidebar() {
                 >
                   Explore Plans
                 </button>
+              </div>
+            )}
+
+            {/* Admin Management Section (Phase 2 Step 6) */}
+            {currentUser?.role === 'admin' && (
+              <div className="sidebar__section">
+                <p className="sidebar__section-title">Administration</p>
+                <ul className="sidebar__list" role="list">
+                  <li>
+                    <button
+                      className={`sidebar__item ${isItemActive('admin') ? 'sidebar__item--active' : ''}`}
+                      onClick={() => selectSidebarItem('admin')}
+                      id="sidebar-nav-admin"
+                      aria-label="Admin Dashboard"
+                      style={{ color: '#f59e0b' }}
+                    >
+                      <BarChart3 size={20} className="sidebar__item-icon" />
+                      <span className="sidebar__item-label" style={{ fontWeight: 600 }}>Admin Dashboard</span>
+                      <span className="badge badge--vip" style={{ marginLeft: 'auto', fontSize: 10 }}>HQ</span>
+                    </button>
+                  </li>
+                </ul>
               </div>
             )}
 

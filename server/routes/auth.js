@@ -24,9 +24,9 @@ const {
   loginIpLimiter,
   loginEmailLimiter,
   registerLimiter,
-  otpVerifyLimiter,
   otpResendLimiter,
 } = require('../middleware/rateLimiter');
+const { otpVerifyLimiter } = require('../middleware/otpLimiter');
 
 const router = express.Router();
 
@@ -51,39 +51,54 @@ function cleanIdArray(arr) {
 
 /**
  * Helper: Safely merge guest data into user account without duplicates
+ * Ensures likes and dislikes remain strictly mutually exclusive.
  */
 function mergeGuestDataIntoUser(user, guestData) {
   if (!guestData || typeof guestData !== 'object') return;
 
-  if (Array.isArray(guestData.likedVideos)) {
-    const combined = [...(user.likedVideos || []), ...cleanIdArray(guestData.likedVideos)];
-    user.likedVideos = Array.from(new Set(combined));
+  const guestLikes = Array.isArray(guestData.likedVideos) ? cleanIdArray(guestData.likedVideos) : [];
+  const guestDislikes = Array.isArray(guestData.dislikedVideos) ? cleanIdArray(guestData.dislikedVideos) : [];
+
+  const liked = new Set(cleanIdArray(user.likedVideos || []));
+  const disliked = new Set(cleanIdArray(user.dislikedVideos || []));
+
+  // Merge likes: if liked by guest, add to liked and remove from disliked
+  for (const id of guestLikes) {
+    liked.add(id);
+    disliked.delete(id);
   }
 
-  if (Array.isArray(guestData.dislikedVideos)) {
-    const combined = [...(user.dislikedVideos || []), ...cleanIdArray(guestData.dislikedVideos)];
-    user.dislikedVideos = Array.from(new Set(combined));
+  // Merge dislikes: if disliked by guest (and not in guestLikes), add to disliked and remove from liked
+  for (const id of guestDislikes) {
+    if (!guestLikes.includes(id)) {
+      disliked.add(id);
+      liked.delete(id);
+    }
   }
+
+  // Ensure absolute mutual exclusivity
+  user.likedVideos = Array.from(liked);
+  user.dislikedVideos = Array.from(disliked).filter(id => !liked.has(id));
 
   if (Array.isArray(guestData.watchLater)) {
-    const combined = [...(user.watchLater || []), ...cleanIdArray(guestData.watchLater)];
+    const combined = [...cleanIdArray(user.watchLater || []), ...cleanIdArray(guestData.watchLater)];
     user.watchLater = Array.from(new Set(combined));
   }
 
   if (Array.isArray(guestData.subscribedChannels)) {
-    const combined = [...(user.subscribedChannels || []), ...cleanIdArray(guestData.subscribedChannels)];
+    const combined = [...cleanIdArray(user.subscribedChannels || []), ...cleanIdArray(guestData.subscribedChannels)];
     user.subscribedChannels = Array.from(new Set(combined));
   }
 
   if (Array.isArray(guestData.watchHistory)) {
     const guestHistory = cleanIdArray(guestData.watchHistory);
-    const existing = user.watchHistory || [];
+    const existing = cleanIdArray(user.watchHistory || []);
     // Combine preserving recent order without duplicates
     const historySet = new Set(guestHistory);
     for (const id of existing) {
       historySet.add(id);
     }
-    user.watchHistory = Array.from(historySet);
+    user.watchHistory = Array.from(historySet).slice(0, 100);
   }
 }
 
@@ -127,13 +142,14 @@ router.post('/register', registerLimiter, async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Create user (strictly Free tier)
+    // Create user (strictly Free tier and default 'user' role)
     const newUser = new User({
       name: name.trim(),
       email: normalizedEmail,
       passwordHash,
       subscriptionTier: 'free',
       themePreference: 'auto',
+      role: 'user',
     });
 
     // Merge any existing guest activity seamlessly
@@ -147,7 +163,7 @@ router.post('/register', registerLimiter, async (req, res) => {
     const rawDeviceToken = crypto.randomBytes(32).toString('hex');
     const deviceTokenHash = crypto.createHash('sha256').update(rawDeviceToken).digest('hex');
 
-    await TrustedDevice.create({
+    const createdDevice = await TrustedDevice.create({
       userId: newUser._id,
       deviceTokenHash,
       deviceName: context.deviceName,
@@ -178,9 +194,9 @@ router.post('/register', registerLimiter, async (req, res) => {
       userAgent: context.userAgent,
     });
 
-    // Issue 30-day device cookie and 7-day auth session cookie
+    // Issue 30-day device cookie and 7-day auth session cookie bound to deviceId
     setDeviceCookie(res, rawDeviceToken);
-    const token = signToken(newUser._id);
+    const token = signToken(newUser._id, createdDevice._id);
     setAuthCookie(res, token);
 
     const resolvedTheme = resolveTheme(newUser.themePreference);
@@ -290,9 +306,9 @@ router.post('/login', loginIpLimiter, loginEmailLimiter, async (req, res) => {
       trustedDeviceDoc.lastLocation = context.location;
       await trustedDeviceDoc.save();
 
-      // Refresh device cookie (30 days) and session cookie (7 days)
+      // Refresh device cookie (30 days) and session cookie (7 days) bound to trusted device
       setDeviceCookie(res, rawDeviceCookie);
-      const token = signToken(user._id);
+      const token = signToken(user._id, trustedDeviceDoc._id);
       setAuthCookie(res, token);
 
       // Record successful login audit
@@ -423,11 +439,12 @@ router.post('/verify-otp', requireTempAuth, otpVerifyLimiter, async (req, res) =
 
     const cleanOtp = otp.trim();
 
-    // 1. Locate the active OTP session
-    const session = await OtpSession.findOne({
-      userId,
-      status: 'pending',
-    }).sort({ createdAt: -1 });
+    // 1. Locate the active OTP session tied to this tempAuth session
+    const sessionQuery = { userId, status: 'pending' };
+    if (sessionId && mongoose.Types.ObjectId.isValid(sessionId)) {
+      sessionQuery._id = sessionId;
+    }
+    const session = await OtpSession.findOne(sessionQuery).sort({ createdAt: -1 });
 
     if (!session) {
       return res.status(400).json({
@@ -519,7 +536,7 @@ router.post('/verify-otp', requireTempAuth, otpVerifyLimiter, async (req, res) =
       const rawDeviceToken = crypto.randomBytes(32).toString('hex');
       const deviceTokenHash = crypto.createHash('sha256').update(rawDeviceToken).digest('hex');
 
-      await TrustedDevice.create({
+      const createdDevice = await TrustedDevice.create({
         userId,
         deviceTokenHash,
         deviceName: deviceName || context.deviceName,
@@ -535,9 +552,9 @@ router.post('/verify-otp', requireTempAuth, otpVerifyLimiter, async (req, res) =
         isRevoked: false,
       });
 
-      // Set cookies
+      // Set cookies (session token bound to created trusted device)
       setDeviceCookie(res, rawDeviceToken);
-      const sessionToken = signToken(userId);
+      const sessionToken = signToken(userId, createdDevice._id);
       setAuthCookie(res, sessionToken);
 
       // Record successful login in audit trail
@@ -672,12 +689,15 @@ router.get('/dev/last-otp', requireTempAuth, (req, res) => {
  * Clears the session cookie.
  */
 router.post('/logout', (req, res) => {
+  // Clear both authentication and device trust cookies
   clearAuthCookie(res);
+  clearDeviceCookie(res);
   return res.status(200).json({
     success: true,
     message: 'Signed out successfully',
   });
 });
+
 
 /**
  * GET /api/auth/me
@@ -742,17 +762,20 @@ router.get('/users', requireAuth, async (req, res) => {
 router.put('/likes', requireAuth, async (req, res) => {
   try {
     const { videoId } = req.body;
-    if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+    if (!videoId || typeof videoId !== 'string' || !videoId.trim()) {
+      return res.status(400).json({ error: 'Valid videoId is required' });
+    }
+    const cleanId = videoId.trim();
 
     const user = req.user;
-    const liked = new Set(user.likedVideos || []);
-    const disliked = new Set(user.dislikedVideos || []);
+    const liked = new Set(cleanIdArray(user.likedVideos || []));
+    const disliked = new Set(cleanIdArray(user.dislikedVideos || []));
 
-    if (liked.has(videoId)) {
-      liked.delete(videoId);
+    if (liked.has(cleanId)) {
+      liked.delete(cleanId);
     } else {
-      liked.add(videoId);
-      disliked.delete(videoId); // Liking removes dislike
+      liked.add(cleanId);
+      disliked.delete(cleanId); // Liking removes dislike
     }
 
     user.likedVideos = Array.from(liked);
@@ -776,17 +799,20 @@ router.put('/likes', requireAuth, async (req, res) => {
 router.put('/dislikes', requireAuth, async (req, res) => {
   try {
     const { videoId } = req.body;
-    if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+    if (!videoId || typeof videoId !== 'string' || !videoId.trim()) {
+      return res.status(400).json({ error: 'Valid videoId is required' });
+    }
+    const cleanId = videoId.trim();
 
     const user = req.user;
-    const liked = new Set(user.likedVideos || []);
-    const disliked = new Set(user.dislikedVideos || []);
+    const liked = new Set(cleanIdArray(user.likedVideos || []));
+    const disliked = new Set(cleanIdArray(user.dislikedVideos || []));
 
-    if (disliked.has(videoId)) {
-      disliked.delete(videoId);
+    if (disliked.has(cleanId)) {
+      disliked.delete(cleanId);
     } else {
-      disliked.add(videoId);
-      liked.delete(videoId); // Disliking removes like
+      disliked.add(cleanId);
+      liked.delete(cleanId); // Disliking removes like
     }
 
     user.likedVideos = Array.from(liked);
@@ -810,15 +836,18 @@ router.put('/dislikes', requireAuth, async (req, res) => {
 router.put('/watch-later', requireAuth, async (req, res) => {
   try {
     const { videoId } = req.body;
-    if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+    if (!videoId || typeof videoId !== 'string' || !videoId.trim()) {
+      return res.status(400).json({ error: 'Valid videoId is required' });
+    }
+    const cleanId = videoId.trim();
 
     const user = req.user;
-    const set = new Set(user.watchLater || []);
+    const set = new Set(cleanIdArray(user.watchLater || []));
 
-    if (set.has(videoId)) {
-      set.delete(videoId);
+    if (set.has(cleanId)) {
+      set.delete(cleanId);
     } else {
-      set.add(videoId);
+      set.add(cleanId);
     }
 
     user.watchLater = Array.from(set);
@@ -840,12 +869,15 @@ router.put('/watch-later', requireAuth, async (req, res) => {
 router.post('/history', requireAuth, async (req, res) => {
   try {
     const { videoId } = req.body;
-    if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+    if (!videoId || typeof videoId !== 'string' || !videoId.trim()) {
+      return res.status(400).json({ error: 'Valid videoId is required' });
+    }
+    const cleanId = videoId.trim();
 
     const user = req.user;
-    const current = (user.watchHistory || []).filter(id => id !== videoId);
-    // Add to front of history list (most recent first)
-    user.watchHistory = [videoId, ...current].slice(0, 100);
+    const current = cleanIdArray(user.watchHistory || []).filter(id => id !== cleanId);
+    // Add to front of history list (most recent first, max 100)
+    user.watchHistory = [cleanId, ...current].slice(0, 100);
     await user.save();
 
     return res.json({
@@ -858,8 +890,34 @@ router.post('/history', requireAuth, async (req, res) => {
 });
 
 /**
+ * DELETE /api/auth/history/:videoId
+ * Removes a single video from the user's watch history in MongoDB
+ */
+router.delete('/history/:videoId', requireAuth, async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    if (!videoId || typeof videoId !== 'string' || !videoId.trim()) {
+      return res.status(400).json({ error: 'Valid videoId is required' });
+    }
+    const cleanId = videoId.trim();
+
+    const user = req.user;
+    user.watchHistory = cleanIdArray(user.watchHistory || []).filter(id => id !== cleanId);
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'Video removed from watch history',
+      watchHistory: user.watchHistory,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to remove video from history' });
+  }
+});
+
+/**
  * DELETE /api/auth/history
- * Clears the user's watch history in MongoDB
+ * Clears the entire watch history for the authenticated user in MongoDB
  */
 router.delete('/history', requireAuth, async (req, res) => {
   try {
@@ -883,15 +941,18 @@ router.delete('/history', requireAuth, async (req, res) => {
 router.put('/subscriptions', requireAuth, async (req, res) => {
   try {
     const { channelId } = req.body;
-    if (!channelId) return res.status(400).json({ error: 'channelId is required' });
+    if (!channelId || typeof channelId !== 'string' || !channelId.trim()) {
+      return res.status(400).json({ error: 'Valid channelId is required' });
+    }
+    const cleanId = channelId.trim();
 
     const user = req.user;
-    const set = new Set(user.subscribedChannels || []);
+    const set = new Set(cleanIdArray(user.subscribedChannels || []));
 
-    if (set.has(channelId)) {
-      set.delete(channelId);
+    if (set.has(cleanId)) {
+      set.delete(cleanId);
     } else {
-      set.add(channelId);
+      set.add(cleanId);
     }
 
     user.subscribedChannels = Array.from(set);

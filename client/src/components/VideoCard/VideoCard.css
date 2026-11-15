@@ -188,3 +188,35 @@
 .video-card:hover .video-card__category {
   opacity: 1;
 }
+
+/* Quick remove button */
+.video-card__remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+  z-index: 5;
+  backdrop-filter: blur(4px);
+}
+
+.video-card:hover .video-card__remove-btn,
+.video-card:focus-within .video-card__remove-btn {
+  opacity: 1;
+}
+
+.video-card__remove-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  transform: scale(1.1);
+}

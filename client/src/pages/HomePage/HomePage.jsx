@@ -2,12 +2,14 @@ import { useMemo } from 'react';
 import {
   Flame, Bell, ThumbsUp, History, Clock, X,
   CheckCircle2, Sparkles, Film, Wifi, WifiOff,
-  Download, Trash2, Play, Info
+  Download, Trash2, Play, Info, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import CategoryPills from '../../components/CategoryPills/CategoryPills';
 import VideoCard from '../../components/VideoCard/VideoCard';
 import SubscriptionPage from '../../components/SubscriptionPage/SubscriptionPage';
 import SecurityPage from '../../components/SecurityPage/SecurityPage';
+import CreatorVideos from '../../components/CreatorVideos/CreatorVideos';
+import AdminPage from '../AdminPage/AdminPage';
 import { useApp } from '../../context/AppContext';
 import { MOCK_CHANNELS } from '../../data/mockData';
 import './HomePage.css';
@@ -24,9 +26,12 @@ export default function HomePage() {
     activeChannelFilter,
     subscribedChannels,
     likedVideos,
+    toggleLike,
     watchHistory,
-    watchLater,
     clearHistory,
+    removeFromHistory,
+    watchLater,
+    toggleWatchLater,
     selectSidebarItem,
     toggleSubscribe,
     currentUser,
@@ -36,6 +41,7 @@ export default function HomePage() {
     downloadingVideoId,
     downloadVideo,
     deleteDownloadHistory,
+    requestOfflineAuthorization,
     navigateToWatch,
   } = useApp();
 
@@ -137,8 +143,8 @@ export default function HomePage() {
       {/* Normal content — hidden while loading */}
       {!videosLoading && (
         <>
-          {/* Sticky category filter (hidden in upgrade view) */}
-          {currentView !== 'upgrade' && (
+          {/* Sticky category filter (hidden in upgrade/my-videos/admin views) */}
+          {currentView !== 'upgrade' && currentView !== 'my-videos' && currentView !== 'admin' && (
             <div className="home-page__categories">
               <CategoryPills />
             </div>
@@ -365,8 +371,16 @@ export default function HomePage() {
 
                         <div className="download-item-card__meta">
                           <span className={`badge ${item.status === 'completed' ? 'badge--success' : item.status === 'interrupted' ? 'badge--warning' : 'badge--danger'}`}>
-                            {item.status === 'completed' ? '✓ Completed' : item.status === 'interrupted' ? '⚠ Interrupted' : '✕ Failed'}
+                            {item.status === 'completed' ? (item.isWatermarked ? '✓ Watermarked' : '✓ Completed') : item.status === 'interrupted' ? '⚠ Interrupted' : '✕ Failed'}
                           </span>
+                          {item.isExpired && item.status === 'reserved' && (
+                            <span className="badge badge--warning">⌛ Link Expired</span>
+                          )}
+                          {item.offlineAuthExpiresAt && new Date(item.offlineAuthExpiresAt) > new Date() && (
+                            <span className="badge badge--vip" title={`Offline playback authorized until ${new Date(item.offlineAuthExpiresAt).toLocaleDateString()}`}>
+                              📱 Offline Valid
+                            </span>
+                          )}
                           <span className="download-item-card__date">
                             {new Date(item.createdAt).toLocaleDateString()}
                           </span>
@@ -387,11 +401,22 @@ export default function HomePage() {
                             className="btn btn--sm btn--secondary"
                             onClick={() => downloadVideo({ id: item.videoId, title: item.videoTitle })}
                             disabled={downloadingVideoId === item.videoId}
-                            title="Re-download video file (does not consume additional quota)"
+                            title={item.status === 'failed' || item.status === 'interrupted' ? 'Retry downloading this video' : 'Re-download video file (does not consume additional quota)'}
                           >
-                            <Download size={13} />
-                            <span>{downloadingVideoId === item.videoId ? 'Downloading…' : 'Re-download'}</span>
+                            {item.status === 'failed' || item.status === 'interrupted' ? <RefreshCw size={13} /> : <Download size={13} />}
+                            <span>{downloadingVideoId === item.videoId ? 'Processing…' : (item.status === 'failed' || item.status === 'interrupted') ? 'Retry' : 'Re-download'}</span>
                           </button>
+                          {item.status === 'completed' && (
+                            <button
+                              className="btn btn--sm btn--ghost"
+                              onClick={() => requestOfflineAuthorization(item.id)}
+                              title="Generate offline playback license for device"
+                              aria-label="Authorize offline playback"
+                            >
+                              <ShieldCheck size={13} />
+                              <span>Offline Auth</span>
+                            </button>
+                          )}
                           <button
                             className="btn btn--sm btn--ghost download-item-card__delete-btn"
                             onClick={() => deleteDownloadHistory(item.id)}
@@ -421,8 +446,18 @@ export default function HomePage() {
         <SecurityPage />
       )}
 
+      {/* Creator Studio & My Uploaded Videos View (Phase 5 Module 4) */}
+      {currentView === 'my-videos' && (
+        <CreatorVideos />
+      )}
+
+      {/* Admin Moderation, Analytics & Operations Dashboard (Phase 2 Step 6) */}
+      {currentView === 'admin' && (
+        <AdminPage />
+      )}
+
       {/* Normal Video Grid (shown for non-special views) */}
-      {currentView !== 'downloads' && currentView !== 'upgrade' && currentView !== 'security' && (
+      {currentView !== 'downloads' && currentView !== 'upgrade' && currentView !== 'security' && currentView !== 'my-videos' && currentView !== 'admin' && (
         <>
           {/* Search result heading */}
       {searchQuery && (
@@ -449,6 +484,24 @@ export default function HomePage() {
               key={video.id}
               video={video}
               style={{ animationDelay: `${i * 35}ms` }}
+              onRemove={
+                currentView === 'history'
+                  ? removeFromHistory
+                  : currentView === 'watch-later'
+                  ? toggleWatchLater
+                  : currentView === 'liked'
+                  ? toggleLike
+                  : undefined
+              }
+              removeTooltip={
+                currentView === 'history'
+                  ? 'Remove from watch history'
+                  : currentView === 'watch-later'
+                  ? 'Remove from Watch Later'
+                  : currentView === 'liked'
+                  ? 'Remove from Liked videos'
+                  : undefined
+              }
             />
           ))}
         </section>

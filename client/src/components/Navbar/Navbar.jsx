@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Menu, Bell, Upload, User, X, Mic, ArrowLeft, LogOut, Settings, Zap, Crown, Star, Shield, Sun, Moon, Video } from 'lucide-react';
+import { Search, Menu, Bell, Upload, User, X, Mic, ArrowLeft, LogOut, Settings, Zap, Crown, Star, Shield, Sun, Moon, Video, BarChart3 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import './Navbar.css';
 
@@ -21,12 +21,41 @@ export default function Navbar() {
     updateThemePreference,
     currentPage,
     navigateToCall,
+    openUploadModal,
   } = useApp();
   const [searchFocused, setSearchFocused] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [realNotifications, setRealNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const searchRef = useRef(null);
+
+  // Fetch real mention and reply notifications when user is logged in
+  useEffect(() => {
+    if (!currentUser) {
+      setRealNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    async function fetchNotifications() {
+      try {
+        const res = await fetch('/api/comments/notifications', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setRealNotifications(data.notifications || []);
+          setUnreadCount(data.unreadCount || 0);
+        }
+      } catch {
+        // Silently fall back
+      }
+    }
+
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000); // 30s polling
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // Close notifications and user menu on outside click
   useEffect(() => {
@@ -212,7 +241,14 @@ export default function Navbar() {
               className="navbar__icon-btn navbar__create-btn"
               aria-label="Create or upload video"
               title="Create"
-              onClick={() => showToast('📤 Video uploading with transcoding pipeline is planned for next stages.')}
+              onClick={() => {
+                if (!currentUser) {
+                  openAuthModal();
+                  showToast('Please sign in to upload videos.');
+                } else {
+                  openUploadModal();
+                }
+              }}
               id="upload-btn"
             >
               <Upload size={18} />
@@ -234,33 +270,75 @@ export default function Navbar() {
             <div className="navbar__notif-wrapper">
               <button
                 className={`navbar__icon-btn ${notifOpen ? 'active' : ''}`}
-                onClick={() => setNotifOpen(prev => !prev)}
+                onClick={async () => {
+                  setNotifOpen(prev => !prev);
+                  if (!notifOpen && unreadCount > 0) {
+                    try {
+                      await fetch('/api/comments/notifications/read-all', {
+                        method: 'PUT',
+                        credentials: 'include',
+                      });
+                      setUnreadCount(0);
+                    } catch {
+                      // ignore
+                    }
+                  }
+                }}
                 aria-label="Notifications"
                 aria-expanded={notifOpen}
                 id="notifications-btn"
               >
                 <Bell size={18} />
-                <span className="navbar__notif-dot" aria-hidden="true" />
+                {(unreadCount > 0 || realNotifications.some(n => !n.isRead)) && (
+                  <span className="navbar__notif-dot" aria-hidden="true" />
+                )}
               </button>
 
               {notifOpen && (
                 <div className="navbar__notif-panel glass animate-fade-in" role="region" aria-label="Notifications">
                   <div className="navbar__notif-header">
                     <span>Notifications</span>
-                    <span className="badge badge--mock">Mock Data</span>
+                    {currentUser && realNotifications.length > 0 && (
+                      <span style={{ fontSize: '11px', color: '#6366f1' }}>Live</span>
+                    )}
                   </div>
-                  {MOCK_NOTIFICATIONS.map(n => (
-                    <div key={n.id} className="navbar__notif-item">
-                      <div className="navbar__notif-avatar" style={{ background: n.color }}>
-                        {n.initials}
+                  {currentUser && realNotifications.length > 0 ? (
+                    realNotifications.map(n => (
+                      <div
+                        key={n.id}
+                        className="navbar__notif-item"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setNotifOpen(false);
+                          showToast(`${n.senderName} ${n.type === 'mention' ? 'mentioned you' : 'replied'}: "${n.commentText}"`);
+                        }}
+                      >
+                        <div className="navbar__notif-avatar" style={{ background: n.senderColor || '#6366f1' }}>
+                          {n.senderInitials || 'U'}
+                        </div>
+                        <div className="navbar__notif-text">
+                          <p>
+                            <strong>{n.senderName}</strong> {n.type === 'mention' ? 'mentioned you in a comment' : 'replied to your comment'} on <em>{n.videoTitle}</em>: "{n.commentText}"
+                          </p>
+                          <span>{new Date(n.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        {!n.isRead && <div className="navbar__notif-unread" aria-label="Unread" />}
                       </div>
-                      <div className="navbar__notif-text">
-                        <p>{n.message}</p>
-                        <span>{n.time}</span>
+                    ))
+                  ) : (
+                    MOCK_NOTIFICATIONS.map(n => (
+                      <div key={n.id} className="navbar__notif-item">
+                        <div className="navbar__notif-avatar" style={{ background: n.color }}>
+                          {n.initials}
+                        </div>
+                        <div className="navbar__notif-text">
+                          <p>{n.message}</p>
+                          <span>{n.time}</span>
+                        </div>
+                        {n.unread && <div className="navbar__notif-unread" aria-label="Unread" />}
                       </div>
-                      {n.unread && <div className="navbar__notif-unread" aria-label="Unread" />}
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -350,6 +428,39 @@ export default function Navbar() {
                       <User size={16} />
                       <span>Your Profile</span>
                     </button>
+
+                    {/* My Videos / Creator Studio */}
+                    <button
+                      type="button"
+                      className="navbar__dropdown-item"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        selectSidebarItem('my-videos');
+                      }}
+                      role="menuitem"
+                      id="navbar-my-videos-btn"
+                    >
+                      <Upload size={16} />
+                      <span>My Videos</span>
+                    </button>
+
+                    {/* Admin Dashboard (Phase 2 Step 6) */}
+                    {currentUser.role === 'admin' && (
+                      <button
+                        type="button"
+                        className="navbar__dropdown-item"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          selectSidebarItem('admin');
+                        }}
+                        role="menuitem"
+                        id="navbar-admin-btn"
+                        style={{ color: '#f59e0b', fontWeight: 600 }}
+                      >
+                        <BarChart3 size={16} />
+                        <span>Admin Dashboard</span>
+                      </button>
+                    )}
 
                     {/* Security & Devices (Task 4) */}
                     <button

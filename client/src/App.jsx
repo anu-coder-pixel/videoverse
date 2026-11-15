@@ -4,6 +4,7 @@ import Navbar from './components/Navbar/Navbar';
 import Sidebar from './components/Sidebar/Sidebar';
 import AuthModal from './components/AuthModal/AuthModal';
 import IncomingCallModal from './components/IncomingCallModal/IncomingCallModal';
+import UploadModal from './components/UploadModal/UploadModal';
 import HomePage from './pages/HomePage/HomePage';
 import WatchPage from './pages/WatchPage/WatchPage';
 import CallPage from './pages/CallPage/CallPage';
@@ -32,6 +33,9 @@ function AppInner() {
 
       {/* Authentication Modal */}
       <AuthModal />
+
+      {/* Creator Video Upload Modal (Phase 5 Module 4) */}
+      <UploadModal />
 
       {/* Global Incoming Call Invitation Modal */}
       <IncomingCallModal />

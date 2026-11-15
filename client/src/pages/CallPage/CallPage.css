@@ -689,6 +689,18 @@
   color: #d8b4fe;
 }
 
+.call-page__badge--timer {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: #c7d2fe;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+
 .call-page__active-title {
   font-size: 1.4rem;
   font-weight: 700;
@@ -949,6 +961,7 @@
 }
 
 .call-page__ctrl-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -975,6 +988,34 @@
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+}
+
+.call-page__ctrl-btn--active {
+  background: rgba(99, 102, 241, 0.35) !important;
+  border-color: #818cf8 !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.45);
+}
+
+.call-page__unread-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  line-height: 14px;
+  border-radius: 9px;
+  text-align: center;
+  padding: 0 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 2px solid #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .call-page__ctrl-btn--muted {
@@ -1024,6 +1065,229 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── Stage & Chat Drawer Layout (Phase 6.7) ────────────────────────────── */
+.call-page__stage-container {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  position: relative;
+  align-items: stretch;
+}
+
+.call-page__stage-container--with-chat .call-page__video-stage {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .call-page__stage-container--with-chat {
+    flex-direction: column;
+  }
+}
+
+/* Chat Drawer */
+.call-page__chat-drawer {
+  width: 340px;
+  max-width: 100%;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px);
+  min-height: 420px;
+  max-height: 640px;
+}
+
+@media (max-width: 960px) {
+  .call-page__chat-drawer {
+    width: 100%;
+    min-height: 320px;
+    max-height: 380px;
+  }
+}
+
+.call-page__chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.call-page__chat-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e2e8f0;
+}
+
+.call-page__chat-title-group h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.call-page__chat-close-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.call-page__chat-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.call-page__chat-messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.call-page__chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 180px;
+  gap: 8px;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.call-page__chat-empty p {
+  margin: 0;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.call-page__chat-bubble-wrap {
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
+  gap: 3px;
+}
+
+.call-page__chat-bubble-wrap--self {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.call-page__chat-bubble-wrap--remote {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.call-page__chat-sender-name {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.call-page__chat-bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  word-break: break-word;
+  position: relative;
+}
+
+.call-page__chat-bubble--self {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.call-page__chat-bubble--remote {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+  border-bottom-left-radius: 4px;
+}
+
+.call-page__chat-text {
+  margin: 0 0 4px;
+  white-space: pre-wrap;
+}
+
+.call-page__chat-time {
+  display: block;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: right;
+}
+
+.call-page__chat-input-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.call-page__chat-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 8px 14px;
+  color: #fff;
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.call-page__chat-input:focus {
+  border-color: #6366f1;
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+
+.call-page__chat-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #6366f1;
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.call-page__chat-send-btn:hover:not(:disabled) {
+  background: #4f46e5;
+  transform: scale(1.05);
+}
+
+.call-page__chat-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Auth Card */
@@ -1081,3 +1345,490 @@
 .text-warning { color: #f59e0b; }
 .text-muted { color: #64748b; }
 .text-sm { font-size: 0.85rem; }
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Phase 3 — Group Calling UI Additions
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Call Mode Tabs ─────────────────────────────────────────────────────────── */
+.call-page__mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 20px 0;
+}
+
+.call-page__mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.call-page__mode-tab:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  color: var(--text-primary, #e2e8f0);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.call-page__mode-tab--active {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  font-weight: 600;
+}
+
+/* ── Group contact multi-select chips ───────────────────────────────────────── */
+.call-page__group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.call-page__group-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 4px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: #c7d2fe;
+}
+
+.call-page__group-chip-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.call-page__group-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.3);
+  border: none;
+  cursor: pointer;
+  color: #fca5a5;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+
+.call-page__group-chip-remove:hover {
+  background: rgba(239, 68, 68, 0.6);
+}
+
+/* ── Contact list checkbox (group mode) ─────────────────────────────────────── */
+.call-page__group-check {
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.call-page__checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: all 0.15s ease;
+}
+
+.call-page__checkbox--checked {
+  background: #6366f1;
+  border-color: #6366f1;
+}
+
+.call-page__contact-item--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Group call info box ─────────────────────────────────────────────────────── */
+.call-page__group-info-box {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.call-page__group-info-title {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.call-page__group-info-sub {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.4;
+}
+
+/* ── Group summary preview ───────────────────────────────────────────────────── */
+.call-page__group-summary {
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.call-page__group-summary-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+  margin: 0 0 10px 0;
+}
+
+.call-page__group-summary-avatars {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.call-page__group-summary-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.call-page__group-summary-avatar:hover {
+  transform: scale(1.1);
+}
+
+.call-page__group-summary-avatar--add {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1.5px dashed rgba(255, 255, 255, 0.2) !important;
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* ── Group Call Video Grid ───────────────────────────────────────────────────── */
+.call-page__group-grid {
+  display: grid;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+
+/* 1 participant (self only — waiting) */
+.call-page__group-grid--1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 participants */
+.call-page__group-grid--2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 3 participants: 2 top, 1 centered bottom */
+.call-page__group-grid--3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.call-page__group-grid--3 > *:last-child {
+  grid-column: 1 / -1;
+  max-width: 50%;
+  justify-self: center;
+  width: 100%;
+}
+
+/* 4 participants: 2×2 */
+.call-page__group-grid--4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* 5 participants: 3 top + 2 bottom */
+.call-page__group-grid--5 {
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.call-page__group-grid--5 > *:nth-child(4),
+.call-page__group-grid--5 > *:nth-child(5) {
+  /* Last row centers 2 tiles inside the 3-column grid */
+}
+
+/* Waiting placeholder inside grid */
+.call-page__group-placeholder {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.call-page__group-placeholder p {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* ── Responsive: Mobile adjustments ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .call-page__mode-tabs {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .call-page__group-grid--3,
+  .call-page__group-grid--4,
+  .call-page__group-grid--5 {
+    grid-template-columns: 1fr;
+    grid-template-rows: unset;
+    overflow-y: auto;
+    max-height: 60vh;
+  }
+
+  .call-page__group-grid--3 > *:last-child {
+    grid-column: unset;
+    max-width: 100%;
+    justify-self: unset;
+  }
+
+  .call-page__group-grid--5 > *:nth-child(n) {
+    grid-column: unset;
+  }
+}
+
+@media (max-width: 768px) {
+  .call-page__group-grid--5 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: unset;
+  }
+
+  .call-page__group-grid--5 > *:last-child {
+    grid-column: 1 / -1;
+    max-width: 50%;
+    justify-self: center;
+    width: 100%;
+  }
+}
+
+/* ── Moderation Badges & Controls ─────────────────────────────────────────── */
+.call-page__badge--host {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+
+.call-page__badge--cohost {
+  background: rgba(147, 51, 234, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(147, 51, 234, 0.4);
+}
+
+.call-page__badge--locked {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.call-page__peer-quick-mod {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.call-page__peer-quick-mod-btn {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+  border: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.call-page__peer-quick-mod-btn--kick {
+  background: rgba(55, 65, 81, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.call-page__peer-quick-mod-btn:hover {
+  transform: scale(1.15);
+}
+
+/* ── Participants Roster Drawer ───────────────────────────────────────────── */
+.call-page__participants-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.call-page__roster-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 8px;
+}
+
+.call-page__roster-item--self {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.call-page__roster-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.call-page__roster-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.call-page__roster-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.call-page__roster-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+
+.call-page__roster-role {
+  font-size: 0.7rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.call-page__roster-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.call-page__roster-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.call-page__roster-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  transition: all 0.15s ease;
+}
+
+.call-page__roster-btn--mute {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.call-page__roster-btn--mute:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.call-page__roster-btn--cohost {
+  background: rgba(147, 51, 234, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(147, 51, 234, 0.4);
+}
+
+.call-page__roster-btn--cohost:hover {
+  background: #9333ea;
+  color: #fff;
+}
+
+.call-page__roster-btn--revoke {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+
+.call-page__roster-btn--kick {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.call-page__roster-btn--kick:hover {
+  background: #dc2626;
+  color: #fff;
+}

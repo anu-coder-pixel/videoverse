@@ -10,7 +10,30 @@
  *    Result: { allowed: true, status: 'approved', reason: '' }
  */
 
-// Severe prohibited terms (normalized lowercase matching)
+const crypto = require('crypto');
+
+// In-memory frequency tracker for comment flooding (userId -> [timestamps])
+const userPostHistory = new Map();
+
+/**
+ * Normalizes text to defeat basic leetspeak obfuscation
+ */
+function normalizeLeetspeak(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .toLowerCase()
+    .replace(/@/g, 'a')
+    .replace(/\$/g, 's')
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'i')
+    .replace(/!/g, 'i')
+    .replace(/3/g, 'e')
+    .replace(/5/g, 's')
+    .replace(/7/g, 't')
+    .replace(/[*_]/g, '');
+}
+
+// Severe prohibited terms (normalized lowercase & leetspeak matching)
 const SEVERE_PATTERNS = [
   /\bkill\s+your\s*self\b/i,
   /\bi\s+will\s+kill\s+you\b/i,
@@ -20,6 +43,11 @@ const SEVERE_PATTERNS = [
   /\b(child\s*porn|cp\s+links)\b/i,
   /(claim-crypto|free-bitcoin|airdrop-eth|click-to-claim)\.[\w.]+/i,
   /\b(hack\s+account|free\s+robux\s+generator|password\s+stealer)\b/i,
+  // Severe profanity & abusive terms (English + Hinglish)
+  /\b(fuck|fucking|motherfucker|bitch|bastard|asshole|cunt|dickhead|pussy|whore|slut)\b/i,
+  /\b(madarchod|bhenchod|behenchod|bhosdike|bhosadike|chutiya|chutiye|gandu|harami|kameena|randi|bhosadi)\b/i,
+  // Malicious links & IP loggers
+  /(?:bit\.ly|tinyurl\.com|iplogger\.org|grabify\.link|cutt\.ly|free-gift|crypto-drop)\/[^\s]+/i,
 ];
 
 // Borderline / spam patterns (flagged for review, not rejected, hidden from public feed)
@@ -27,7 +55,7 @@ const BORDERLINE_PATTERNS = [
   /\b(sub4sub|sub\s*4\s*sub|subscribe\s+to\s+my\s+channel|check\s+out\s+my\s+channel)\b/i,
   /\b(earn\s+\$?\d+\s+(daily|weekly|a\s+day)|work\s+from\s+home\s+guaranteed)\b/i,
   /\b(whatsapp\s+me|telegram\s+me|dm\s+me\s+on\s+telegram|t\.me\/)\b/i,
-  /\b(you\s+(are\s+a\s+|'re\s+a\s+)?(trash|garbage|scumbag|moron|idiot|loser))\b/i,
+  /\b(you\s+(are\s+a\s+|'re\s+a\s+)?(trash|garbage|scumbag|moron|idiot|loser|kutta|saala))\b/i,
   /\b(fake\s+news\s+scam|this\s+is\s+pure\s+garbage)\b/i,
   /https?:\/\/[^\s]+/i, // Generic links in comments are flagged by default to prevent spam drops
 ];
@@ -180,14 +208,15 @@ function evaluateComment(rawText) {
   }
 
   const detectedLang = detectLanguage(text);
+  const normalized = normalizeLeetspeak(text);
 
-  // 1. Check severe prohibited patterns
+  // 1. Check severe prohibited patterns (original text and leetspeak normalized)
   for (const pattern of SEVERE_PATTERNS) {
-    if (pattern.test(text)) {
+    if (pattern.test(text) || pattern.test(normalized)) {
       return {
         allowed: false,
         status: 'rejected',
-        reason: 'Comment violates community safety guidelines and contains prohibited content.',
+        reason: 'Comment violates community safety guidelines: abusive language or prohibited content detected.',
         language: detectedLang,
       };
     }
@@ -195,7 +224,7 @@ function evaluateComment(rawText) {
 
   // 2. Check borderline / spam patterns
   for (const pattern of BORDERLINE_PATTERNS) {
-    if (pattern.test(text)) {
+    if (pattern.test(text) || pattern.test(normalized)) {
       return {
         allowed: true,
         status: 'flagged',
@@ -221,17 +250,27 @@ function evaluateComment(rawText) {
     }
   }
 
-  // 4. Check for extreme repeated characters (e.g. "loooooooool", "aaaaaaaa")
-  if (/(.)\1{9,}/.test(text)) {
+  // 4. Check for extreme repeated characters or emoji floods (e.g. "loooooooool", "🔥🔥🔥🔥🔥", "!!!!!!")
+  if (/(.)\1{5,}/u.test(text)) {
     return {
       allowed: true,
       status: 'flagged',
-      reason: 'Comment has been flagged for review due to excessive character repetition.',
+      reason: 'Comment has been flagged for review due to excessive character or emoji repetition.',
       language: detectedLang,
     };
   }
 
-  // 5. Approved clean comment
+  // 5. Check for repeated identical word spam (e.g. "free free free free")
+  if (/\b(\w+)\b(?:\s+\1\b){3,}/i.test(text)) {
+    return {
+      allowed: true,
+      status: 'flagged',
+      reason: 'Comment has been flagged for review due to repetitive word spam.',
+      language: detectedLang,
+    };
+  }
+
+  // 6. Approved clean comment
   return {
     allowed: true,
     status: 'approved',
@@ -240,7 +279,96 @@ function evaluateComment(rawText) {
   };
 }
 
+/**
+ * Generates an HMAC-signed mathematical CAPTCHA challenge
+ */
+function generateCaptchaChallenge() {
+  const num1 = crypto.randomInt(1, 15);
+  const num2 = crypto.randomInt(1, 10);
+  const question = `What is ${num1} + ${num2}?`;
+  const answer = String(num1 + num2);
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+  const payload = JSON.stringify({ a: answer, exp: expiresAt });
+  const secret = process.env.JWT_SECRET || 'videoverse_captcha_secret';
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const token = Buffer.from(payload).toString('base64url') + '.' + sig;
+
+  return { question, token };
+}
+
+/**
+ * Validates a submitted CAPTCHA challenge solution
+ */
+function verifyCaptchaChallenge(token, userAnswer) {
+  if (!token || typeof token !== 'string' || !userAnswer) {
+    return false;
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+
+  const [encodedPayload, providedSig] = parts;
+  const secret = process.env.JWT_SECRET || 'videoverse_captcha_secret';
+
+  try {
+    const payload = Buffer.from(encodedPayload, 'base64url').toString('utf8');
+    const expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+
+    if (
+      providedSig.length !== expectedSig.length ||
+      !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))
+    ) {
+      return false;
+    }
+
+    const data = JSON.parse(payload);
+    if (Date.now() > data.exp) {
+      return false; // Expired
+    }
+
+    return String(userAnswer).trim() === String(data.a).trim();
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Checks comment posting frequency to trigger CAPTCHA on flooding
+ * Returns { isFlooding: boolean, recentCount: number }
+ */
+function checkCommentFlood(userId, maxPosts = 3, windowMs = 60000) {
+  const uid = String(userId);
+  const now = Date.now();
+  const history = (userPostHistory.get(uid) || []).filter(t => now - t < windowMs);
+
+  const isFlooding = history.length >= maxPosts;
+  history.push(now);
+  userPostHistory.set(uid, history);
+
+  return {
+    isFlooding,
+    recentCount: history.length,
+  };
+}
+
+/**
+ * Resets comment flood history for a user (called after challenge verification or in tests)
+ */
+function resetCommentFlood(userId = null) {
+  if (userId) {
+    userPostHistory.delete(String(userId));
+  } else {
+    userPostHistory.clear();
+  }
+}
+
 module.exports = {
   detectLanguage,
   evaluateComment,
+  normalizeLeetspeak,
+  generateCaptchaChallenge,
+  verifyCaptchaChallenge,
+  checkCommentFlood,
+  resetCommentFlood,
 };

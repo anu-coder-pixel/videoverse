@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import Hls from 'hls.js';
 import {
   Play, Pause, Volume2, VolumeX, Maximize,
   SkipBack, SkipForward, PictureInPicture2, AlertTriangle, RefreshCw, Loader2, Check,
-  RectangleHorizontal, Clock, Subtitles
+  RectangleHorizontal, Clock, Subtitles, Settings, Layers
 } from 'lucide-react';
 import { getThumbnailStyle } from '../../data/mockData';
 import './VideoPlayer.css';
@@ -265,6 +266,16 @@ export default function VideoPlayer({
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
   const [failedTracks, setFailedTracks] = useState(new Set());
 
+  // Phase 2 Step 4: Adaptive HLS & Quality Selection State
+  const [hlsSupported, setHlsSupported] = useState(false);
+  const [availableQualities, setAvailableQualities] = useState([]); // [{ index: -1, name: 'Auto' }, { index: 0, name: '1080p', height: 1080 }]
+  const [currentQualityIndex, setCurrentQualityIndex] = useState(-1); // -1 = Auto
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [hoverSpriteStyle, setHoverSpriteStyle] = useState(null);
+  const hlsInstanceRef = useRef(null);
+  const qualityMenuRef = useRef(null);
+  const spriteVttDataRef = useRef([]); // [{ start, end, x, y, w, h }]
+
   // Filter valid subtitle tracks from video metadata
   const validSubtitles = Array.isArray(video?.subtitles)
     ? video.subtitles.filter(isValidSubtitleTrack)
@@ -279,11 +290,15 @@ export default function VideoPlayer({
     ? subtitlePreference
     : 'off';
 
-  // Stream source & error handling
-  const [currentSrc, setCurrentSrc] = useState(video.videoUrl);
+  const videoId = String(video?.id || video?._id || '');
+  const primarySrc = videoId ? `/api/videos/${videoId}/stream` : (video?.videoUrl || '');
+
+  const [currentSrc, setCurrentSrc] = useState(primarySrc);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isUsingFallback, setIsUsingFallback] = useState(false);
+
+  const currentVideoIdRef = useRef(videoId);
+  currentVideoIdRef.current = videoId;
 
   function handleToggleTheater() {
     if (onToggleTheaterMode) {
@@ -347,15 +362,15 @@ export default function VideoPlayer({
     };
   }, []);
 
-  const videoId = String(video?.id || video?._id || '');
-
-  // Helper to save current progress if valid
+  // Helper to save current progress for THIS specific video
   const saveCurrentProgress = useCallback(() => {
-    if (!hasResumedRef.current || !videoRef.current || !videoId) return;
+    if (!hasResumedRef.current || !videoRef.current || !currentVideoIdRef.current) return;
     const cur = videoRef.current.currentTime;
-    const dur = videoRef.current.duration || durationSec;
-    saveVideoPosition(videoId, cur, dur);
-  }, [videoId, durationSec]);
+    const dur = (videoRef.current.duration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+      ? videoRef.current.duration
+      : durationSec;
+    saveVideoPosition(currentVideoIdRef.current, cur, dur);
+  }, [durationSec]);
 
   // Save progress on tab/window close
   useEffect(() => {
@@ -365,6 +380,21 @@ export default function VideoPlayer({
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [saveCurrentProgress]);
+
+  // Save progress on unmount specifically for THIS video instance
+  useEffect(() => {
+    return () => {
+      if (videoRef.current && currentVideoIdRef.current) {
+        const cur = videoRef.current.currentTime;
+        const dur = (videoRef.current.duration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+          ? videoRef.current.duration
+          : durationSec;
+        if (cur >= 5 && (!dur || cur < dur * 0.95)) {
+          saveVideoPosition(currentVideoIdRef.current, cur, dur);
+        }
+      }
+    };
+  }, [durationSec]);
 
   // Attempt resume playback position safely on video load
   const attemptResume = useCallback((totalDuration) => {
@@ -392,39 +422,173 @@ export default function VideoPlayer({
     }
   }, [videoId, onToast]);
 
-  // Reset player when video prop changes
+  // Load WebVTT Thumbnail Sprite Metadata if available
+  useEffect(() => {
+    spriteVttDataRef.current = [];
+    if (!video?.thumbnailVttUrl) return;
+
+    fetch(video.thumbnailVttUrl)
+      .then(res => res.ok ? res.text() : '')
+      .then(text => {
+        if (!text || !text.includes('WEBVTT')) return;
+        const cues = [];
+        const lines = text.split('\n');
+        let currentCue = null;
+
+        lines.forEach(line => {
+          const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+          if (timeMatch) {
+            const start = parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseInt(timeMatch[3], 10);
+            const end = parseInt(timeMatch[5], 10) * 3600 + parseInt(timeMatch[6], 10) * 60 + parseInt(timeMatch[7], 10);
+            currentCue = { start, end };
+          } else if (currentCue && line.includes('#xywh=')) {
+            const xywhMatch = line.match(/#xywh=(\d+),(\d+),(\d+),(\d+)/);
+            if (xywhMatch) {
+              currentCue.x = parseInt(xywhMatch[1], 10);
+              currentCue.y = parseInt(xywhMatch[2], 10);
+              currentCue.w = parseInt(xywhMatch[3], 10);
+              currentCue.h = parseInt(xywhMatch[4], 10);
+              cues.push(currentCue);
+              currentCue = null;
+            }
+          }
+        });
+        spriteVttDataRef.current = cues;
+      })
+      .catch(err => console.warn('[VideoPlayer] Failed to load thumbnail VTT:', err.message));
+  }, [video?.thumbnailVttUrl]);
+
+  // Initialize and attempt playback on video change or load (HLS + MP4 Fallback)
   useEffect(() => {
     cancelAutoplay();
-    setCurrentSrc(video.videoUrl);
     setHasError(false);
     setErrorMessage('');
-    setIsUsingFallback(false);
     setProgress(0);
     setCurrentTimeSec(0);
-    setPlaying(false);
     setIsBuffering(false);
     setShowSpeedMenu(false);
     setShowSubtitleMenu(false);
+    setShowQualityMenu(false);
     setShowHoverPreview(false);
     setResumeToast(null);
     setFailedTracks(new Set());
+    setAvailableQualities([]);
+    setCurrentQualityIndex(-1);
     hasResumedRef.current = false;
+
     if (resumeToastTimerRef.current) {
       clearTimeout(resumeToastTimerRef.current);
       resumeToastTimerRef.current = null;
     }
     setDurationSec(parseDuration(video.duration) || 60);
 
+    // Destroy previous HLS instance if any
+    if (hlsInstanceRef.current) {
+      hlsInstanceRef.current.destroy();
+      hlsInstanceRef.current = null;
+    }
+
+    const hlsUrl = video?.hlsMasterPlaylist;
+    const fallbackSrc = videoId ? `/api/videos/${videoId}/stream` : (video?.videoUrl || '');
+
+    let isMounted = true;
+
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.playbackRate = playbackSpeed;
-      videoRef.current.load();
+
+      // 1. Try HLS playback via Hls.js if hlsMasterPlaylist exists and Hls.isSupported()
+      if (hlsUrl && Hls.isSupported()) {
+        const hls = new Hls({
+          capLevelToPlayerSize: true,
+          autoStartLoad: true,
+          startLevel: -1, // Auto
+        });
+
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(videoRef.current);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+          if (!isMounted) return;
+          setHlsSupported(true);
+          const levels = (data.levels || []).map((lvl, index) => ({
+            index,
+            height: lvl.height,
+            name: `${lvl.height}p`,
+            bitrate: lvl.bitrate,
+          }));
+
+          // Sort descending: 1080p, 720p, etc.
+          levels.sort((a, b) => b.height - a.height);
+          setAvailableQualities([{ index: -1, name: 'Auto' }, ...levels]);
+          setCurrentQualityIndex(-1);
+
+          // Attempt play
+          videoRef.current.play().then(() => {
+            if (isMounted) setPlaying(true);
+          }).catch(() => {
+            if (isMounted) setPlaying(false);
+          });
+        });
+
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            console.warn('[Hls.js Fatal Error]', data.type, data.details);
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hls.recoverMediaError();
+                break;
+              default:
+                // Fallback to progressive MP4 stream
+                hls.destroy();
+                hlsInstanceRef.current = null;
+                setHlsSupported(false);
+                setCurrentSrc(fallbackSrc);
+                if (videoRef.current) {
+                  videoRef.current.src = fallbackSrc;
+                  videoRef.current.load();
+                }
+                break;
+            }
+          }
+        });
+
+        hlsInstanceRef.current = hls;
+      } else if (hlsUrl && videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+        // Native HLS support (Safari / iOS)
+        videoRef.current.src = hlsUrl;
+        setHlsSupported(true);
+        videoRef.current.load();
+        videoRef.current.play().then(() => {
+          if (isMounted) setPlaying(true);
+        }).catch(() => {
+          if (isMounted) setPlaying(false);
+        });
+      } else {
+        // Fallback to standard HTTP stream
+        setHlsSupported(false);
+        setCurrentSrc(fallbackSrc);
+        videoRef.current.src = fallbackSrc;
+        videoRef.current.load();
+        videoRef.current.play().then(() => {
+          if (isMounted) setPlaying(true);
+        }).catch(() => {
+          if (isMounted) setPlaying(false);
+        });
+      }
     }
 
     return () => {
-      saveCurrentProgress();
+      isMounted = false;
+      if (hlsInstanceRef.current) {
+        hlsInstanceRef.current.destroy();
+        hlsInstanceRef.current = null;
+      }
     };
-  }, [video.id, video.videoUrl, video.duration, playbackSpeed, cancelAutoplay, saveCurrentProgress]);
+  }, [videoId, video?.videoUrl, video?.hlsMasterPlaylist, video?.duration, playbackSpeed, cancelAutoplay]);
 
   // Synchronize playback rate on video element whenever playbackSpeed changes
   useEffect(() => {
@@ -433,16 +597,16 @@ export default function VideoPlayer({
     }
   }, [playbackSpeed, currentSrc]);
 
-  // Auto-hide controls when playing (paused while speed or subtitle menu is open)
+  // Auto-hide controls when playing (paused while speed, subtitle or quality menu is open)
   useEffect(() => {
-    if (playing && !showSpeedMenu && !showSubtitleMenu) {
+    if (playing && !showSpeedMenu && !showSubtitleMenu && !showQualityMenu) {
       resetHideTimer();
     } else {
       clearTimeout(hideControlsTimer.current);
       setShowControls(true);
     }
     return () => clearTimeout(hideControlsTimer.current);
-  }, [playing, showSpeedMenu, showSubtitleMenu]);
+  }, [playing, showSpeedMenu, showSubtitleMenu, showQualityMenu]);
 
   // Close speed menu when clicking outside
   useEffect(() => {
@@ -459,20 +623,29 @@ export default function VideoPlayer({
     };
   }, [showSpeedMenu]);
 
-  // Close subtitle menu when clicking outside
+  // Close quality menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
-      if (subtitleMenuRef.current && !subtitleMenuRef.current.contains(event.target)) {
-        setShowSubtitleMenu(false);
+      if (qualityMenuRef.current && !qualityMenuRef.current.contains(event.target)) {
+        setShowQualityMenu(false);
       }
     }
-    if (showSubtitleMenu) {
+    if (showQualityMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showSubtitleMenu]);
+  }, [showQualityMenu]);
+
+  // Handler for Quality selection (Auto or manual resolution)
+  const handleSelectQuality = useCallback((index) => {
+    setCurrentQualityIndex(index);
+    setShowQualityMenu(false);
+    if (hlsInstanceRef.current) {
+      hlsInstanceRef.current.currentLevel = index; // -1 for Auto, or level index
+    }
+  }, []);
 
   // Apply active subtitle track on HTML5 video element without disrupting playback
   const applySubtitleTrack = useCallback((targetLang) => {
@@ -546,9 +719,11 @@ export default function VideoPlayer({
   const handleTimeUpdate = useCallback(() => {
     if (!videoRef.current) return;
     const curr = videoRef.current.currentTime;
-    const dur = videoRef.current.duration || durationSec || 1;
+    const dur = (videoRef.current.duration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+      ? videoRef.current.duration
+      : (durationSec || 1);
     setCurrentTimeSec(curr);
-    setProgress((curr / dur) * 100);
+    setProgress(dur > 0 ? (curr / dur) * 100 : 0);
 
     // Periodically save playback progress during active playback (throttled to every 3.5s)
     const now = Date.now();
@@ -563,7 +738,7 @@ export default function VideoPlayer({
   const handleLoadedMetadata = useCallback(() => {
     if (!videoRef.current) return;
     const dur = videoRef.current.duration;
-    if (dur && !isNaN(dur) && isFinite(dur)) {
+    if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
       setDurationSec(dur);
       attemptResume(dur);
     } else {
@@ -577,7 +752,9 @@ export default function VideoPlayer({
   const handleCanPlay = useCallback(() => {
     setIsBuffering(false);
     if (!hasResumedRef.current) {
-      const dur = videoRef.current?.duration || durationSec;
+      const dur = (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+        ? videoRef.current.duration
+        : durationSec;
       if (dur > 0) {
         attemptResume(dur);
       }
@@ -600,7 +777,8 @@ export default function VideoPlayer({
     if (videoId) {
       clearVideoPosition(videoId);
     }
-    if (nextVideo && onPlayNext) {
+    const dur = (videoRef.current && isFinite(videoRef.current.duration)) ? videoRef.current.duration : durationSec;
+    if (nextVideo && onPlayNext && dur > 3) {
       startAutoplayCountdown();
     }
   };
@@ -608,7 +786,6 @@ export default function VideoPlayer({
   const handleVideoError = useCallback(() => {
     setIsBuffering(false);
     setPlaying(false);
-    setHasError(true);
     const mediaErr = videoRef.current?.error;
     let detail = 'The video stream could not be loaded.';
     if (mediaErr) {
@@ -617,25 +794,63 @@ export default function VideoPlayer({
       if (mediaErr.code === 3) detail = 'Video decoding failed or media corrupted.';
       if (mediaErr.code === 4) detail = 'Media format not supported or stream unreachable.';
     }
+
+    // If backend streaming failed, try direct video source URL as secondary resolution
+    if (currentSrc !== video.videoUrl && video.videoUrl) {
+      console.warn(`[VideoPlayer] Backend stream for ${videoId} failed, attempting direct source URL.`);
+      setCurrentSrc(video.videoUrl);
+      if (videoRef.current) {
+        videoRef.current.src = video.videoUrl;
+        videoRef.current.load();
+        const p = videoRef.current.play();
+        if (p !== undefined) p.catch(() => {});
+      }
+      return;
+    }
+
+    setHasError(true);
     setErrorMessage(detail);
-  }, []);
+  }, [currentSrc, video.videoUrl, videoId]);
+
+  const handleRetry = useCallback(() => {
+    setHasError(false);
+    setErrorMessage('');
+    const retrySrc = videoId ? `/api/videos/${videoId}/stream` : video.videoUrl;
+    setCurrentSrc(retrySrc);
+    if (videoRef.current) {
+      videoRef.current.src = retrySrc;
+      videoRef.current.load();
+      const p = videoRef.current.play();
+      if (p !== undefined) {
+        p.then(() => setPlaying(true)).catch(() => setPlaying(false));
+      }
+    }
+  }, [videoId, video.videoUrl]);
 
   // Controls Handlers
   function togglePlay() {
     if (autoplayActive) {
       cancelAutoplay();
     }
-    if (hasError || !videoRef.current) return;
+    if (hasError) {
+      handleRetry();
+      return;
+    }
+    if (!videoRef.current) return;
 
     if (videoRef.current.paused || videoRef.current.ended) {
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('Playback request was prevented:', err);
-        });
+        playPromise
+          .then(() => setPlaying(true))
+          .catch((err) => {
+            console.warn('Playback request was prevented:', err);
+            setPlaying(false);
+          });
       }
     } else {
       videoRef.current.pause();
+      setPlaying(false);
     }
   }
 
@@ -648,12 +863,12 @@ export default function VideoPlayer({
     if (rect.width <= 0) return;
     const clickX = e.clientX - rect.left;
     const pct = Math.min(100, Math.max(0, (clickX / rect.width) * 100));
-    const maxDur = (videoRef.current && !isNaN(videoRef.current.duration) && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+    const maxDur = (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
       ? videoRef.current.duration
-      : (durationSec || 0);
+      : durationSec;
     const newTime = maxDur > 0 ? Math.max(0, Math.min(maxDur, (pct / 100) * maxDur)) : 0;
     videoRef.current.currentTime = newTime;
-    setProgress(pct);
+    setProgress(maxDur > 0 ? (newTime / maxDur) * 100 : 0);
     setCurrentTimeSec(newTime);
   }
 
@@ -661,9 +876,9 @@ export default function VideoPlayer({
   const handleProgressHover = useCallback((clientX, currentTarget) => {
     if (hasError || !currentTarget) return;
     const rect = currentTarget.getBoundingClientRect();
-    const maxDur = (videoRef.current && !isNaN(videoRef.current.duration) && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+    const maxDur = (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
       ? videoRef.current.duration
-      : (durationSec || 0);
+      : durationSec;
 
     if (maxDur <= 0) {
       setShowHoverPreview(false);
@@ -674,7 +889,24 @@ export default function VideoPlayer({
     setHoverPct(pct);
     setHoverTimeSec(time);
     setShowHoverPreview(true);
-  }, [hasError, durationSec]);
+
+    // Calculate sprite sheet background position if VTT cues exist
+    if (spriteVttDataRef.current && spriteVttDataRef.current.length > 0 && video?.thumbnailSpriteUrl) {
+      const cue = spriteVttDataRef.current.find(c => time >= c.start && time < c.end);
+      if (cue) {
+        setHoverSpriteStyle({
+          backgroundImage: `url(${video.thumbnailSpriteUrl})`,
+          backgroundPosition: `-${cue.x}px -${cue.y}px`,
+          width: `${cue.w}px`,
+          height: `${cue.h}px`,
+        });
+      } else {
+        setHoverSpriteStyle(null);
+      }
+    } else {
+      setHoverSpriteStyle(null);
+    }
+  }, [hasError, durationSec, video?.thumbnailSpriteUrl]);
 
   function handleProgressMouseMove(e) {
     handleProgressHover(e.clientX, e.currentTarget);
@@ -823,42 +1055,20 @@ export default function VideoPlayer({
       setVolume(nextVol);
       if (videoRef.current) videoRef.current.volume = nextVol / 100;
     }
-    if (e.key === 'Escape' && (showSpeedMenu || showSubtitleMenu)) {
+    if (e.key === 'Escape' && (showSpeedMenu || showSubtitleMenu || showQualityMenu)) {
       e.preventDefault();
       setShowSpeedMenu(false);
       setShowSubtitleMenu(false);
+      setShowQualityMenu(false);
     }
   }
 
-  // Fallback & Retry Handlers
-  function handleTryFallback() {
-    setHasError(false);
-    setIsUsingFallback(true);
-    const fallback = video.fallbackUrl || 'https://vjs.zencdn.net/v/oceans.mp4';
-    setCurrentSrc(fallback);
-    if (videoRef.current) {
-      videoRef.current.src = fallback;
-      videoRef.current.playbackRate = playbackSpeed;
-      videoRef.current.load();
-      videoRef.current.play().catch(() => {});
-    }
-  }
-
-  function handleRetryPrimary() {
-    setHasError(false);
-    setIsUsingFallback(false);
-    setCurrentSrc(video.videoUrl);
-    if (videoRef.current) {
-      videoRef.current.src = video.videoUrl;
-      videoRef.current.playbackRate = playbackSpeed;
-      videoRef.current.load();
-      videoRef.current.play().catch(() => {});
-    }
-  }
-
+  const effectiveDur = (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0)
+    ? videoRef.current.duration
+    : durationSec;
   const formattedCurrentTime = formatTime(currentTimeSec);
-  const formattedTotalTime = formatTime(durationSec);
-  const remainingSec = Math.max(0, durationSec - currentTimeSec);
+  const formattedTotalTime = formatTime(effectiveDur);
+  const remainingSec = Math.max(0, effectiveDur - currentTimeSec);
   const formattedRemainingTime = `-${formatTime(remainingSec)}`;
   const displayedTimeString = showRemainingTime
     ? `${formattedCurrentTime} / ${formattedRemainingTime}`
@@ -906,7 +1116,7 @@ export default function VideoPlayer({
         ))}
       </video>
 
-      {/* Surface Gradient / Poster background if not loaded or fallback */}
+      {/* Surface Gradient / Poster background if not loaded */}
       <div
         className="video-player__backdrop"
         style={{
@@ -921,9 +1131,9 @@ export default function VideoPlayer({
       {/* Top Stream Status Badge */}
       <div className="video-player__status-badge" onClick={e => e.stopPropagation()}>
         {!hasError ? (
-          <span className={`badge ${isUsingFallback ? 'badge--warning' : 'badge--brand'}`}>
+          <span className="badge badge--brand">
             <span className="video-player__status-dot" aria-hidden="true" />
-            {isUsingFallback ? 'Backup Sample Stream' : 'HTML5 Video Stream Active'}
+            HTML5 Video Stream Active
           </span>
         ) : (
           <span className="badge badge--error">
@@ -1030,7 +1240,7 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Clear Fallback Message Overlay if stream fails */}
+      {/* Error Overlay if stream fails */}
       {hasError && (
         <div
           className="video-player__fallback-overlay animate-fade-in"
@@ -1041,27 +1251,17 @@ export default function VideoPlayer({
           <div className="video-player__fallback-card glass">
             <AlertTriangle size={36} className="text-warning" />
             <h3>Unable to Load Video Stream</h3>
-            <p>{errorMessage || 'The requested sample video could not be streamed.'}</p>
+            <p>{errorMessage || 'The requested video stream could not be loaded.'}</p>
             <div className="video-player__fallback-actions">
               <button
                 className="btn btn--primary btn--sm"
-                onClick={handleTryFallback}
-                id="player-fallback-btn"
-              >
-                <RefreshCw size={14} />
-                Try Alternate Sample
-              </button>
-              <button
-                className="btn btn--secondary btn--sm"
-                onClick={handleRetryPrimary}
+                onClick={handleRetry}
                 id="player-retry-btn"
               >
-                Retry Stream
+                <RefreshCw size={14} />
+                Retry Video
               </button>
             </div>
-            <span className="video-player__fallback-hint">
-              VideoVerse uses public sample media for frontend prototype playback.
-            </span>
           </div>
         </div>
       )}
@@ -1093,11 +1293,17 @@ export default function VideoPlayer({
         >
           {showHoverPreview && hoverTimeSec !== null && durationSec > 0 && !hasError && (
             <div
-              className="video-player__hover-preview"
-              style={{ left: `clamp(28px, ${hoverPct}%, calc(100% - 28px))` }}
+              className={`video-player__hover-preview ${hoverSpriteStyle ? 'video-player__hover-preview--with-thumb' : ''}`}
+              style={{ left: `clamp(40px, ${hoverPct}%, calc(100% - 40px))` }}
               aria-hidden="true"
               id="player-hover-preview"
             >
+              {hoverSpriteStyle && (
+                <div
+                  className="video-player__hover-thumb"
+                  style={hoverSpriteStyle}
+                />
+              )}
               <span className="video-player__hover-time">{formatTime(hoverTimeSec)}</span>
             </div>
           )}
@@ -1323,6 +1529,57 @@ export default function VideoPlayer({
                 </div>
               )}
             </div>
+
+            {/* Quality Selection Menu */}
+            {hlsSupported && availableQualities.length > 0 && (
+              <div className="video-player__quality-wrapper" ref={qualityMenuRef}>
+                <button
+                  type="button"
+                  className={`video-player__btn video-player__quality-btn ${showQualityMenu ? 'video-player__btn--active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowQualityMenu(prev => !prev);
+                  }}
+                  aria-label={`Video quality: ${availableQualities.find(q => q.index === currentQualityIndex)?.name || 'Auto'}`}
+                  aria-haspopup="true"
+                  aria-expanded={showQualityMenu}
+                  title="Video Quality"
+                  id="player-quality-btn"
+                >
+                  <Settings size={17} />
+                </button>
+
+                {showQualityMenu && (
+                  <div
+                    className="video-player__quality-menu animate-fade-in"
+                    role="menu"
+                    aria-label="Quality options"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div className="video-player__quality-header">Quality</div>
+                    {availableQualities.map((q) => {
+                      const isSelected = q.index === currentQualityIndex;
+                      return (
+                        <button
+                          key={q.index}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={isSelected}
+                          className={`video-player__quality-item ${isSelected ? 'video-player__quality-item--active' : ''}`}
+                          onClick={() => handleSelectQuality(q.index)}
+                          id={`player-quality-opt-${q.name.toLowerCase()}`}
+                        >
+                          <span className="video-player__quality-check">
+                            {isSelected ? <Check size={14} /> : null}
+                          </span>
+                          <span className="video-player__quality-text">{q.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Theater Mode Button */}
             <button

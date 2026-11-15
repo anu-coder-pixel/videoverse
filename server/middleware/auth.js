@@ -6,15 +6,21 @@ const COOKIE_NAME = 'vv_token';
 /**
  * Generate a signed JWT token
  */
-function signToken(userId) {
+function signToken(userId, deviceId = null) {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error('JWT_SECRET is not configured in environment variables');
   }
-  return jwt.sign({ id: userId }, secret, {
+  const payload = { id: userId };
+  if (deviceId) {
+    payload.deviceId = String(deviceId);
+  }
+  return jwt.sign(payload, secret, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    algorithm: 'HS256',
   });
 }
+
 
 /**
  * Set HTTP-only auth cookie on response
@@ -70,7 +76,7 @@ async function requireAuth(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(decoded.id);
 
     if (!user) {
@@ -78,6 +84,47 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({
         error: 'The account for this session no longer exists.',
         code: 'USER_NOT_FOUND',
+      });
+    }
+
+    // Check device revocation if session is bound to a deviceId
+    if (decoded.deviceId) {
+      const TrustedDevice = require('../models/TrustedDevice');
+      const device = await TrustedDevice.findById(decoded.deviceId);
+      if (!device || device.isRevoked || (device.expiresAt && new Date() > device.expiresAt)) {
+        clearAuthCookie(res);
+        clearDeviceCookie(res);
+        return res.status(401).json({
+          error: 'This device session has been revoked or expired. Please sign in again.',
+          code: 'SESSION_REVOKED',
+        });
+      }
+    }
+
+    // Check active device cookie revocation if present
+    const rawDeviceCookie = extractDeviceToken(req);
+    if (rawDeviceCookie) {
+      const crypto = require('crypto');
+      const incomingHash = crypto.createHash('sha256').update(rawDeviceCookie).digest('hex');
+      const TrustedDevice = require('../models/TrustedDevice');
+      const dev = await TrustedDevice.findOne({ userId: user._id, deviceTokenHash: incomingHash });
+      if (dev && (dev.isRevoked || (dev.expiresAt && new Date() > dev.expiresAt))) {
+        clearAuthCookie(res);
+        clearDeviceCookie(res);
+        return res.status(401).json({
+          error: 'This device has been revoked or expired. Please sign in again.',
+          code: 'DEVICE_REVOKED',
+        });
+      }
+    }
+
+    // Phase 2 Step 6: Verify account suspension status
+    if (user.isSuspended) {
+      clearAuthCookie(res);
+      return res.status(403).json({
+        error: 'Your account has been suspended by an administrator. Please contact support.',
+        code: 'ACCOUNT_SUSPENDED',
+        reason: user.suspendedReason || null,
       });
     }
 
@@ -110,13 +157,25 @@ async function optionalAuth(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(decoded.id);
     req.user = user || null;
   } catch (err) {
     req.user = null;
   }
   next();
+}
+
+function requireRole(requiredRole) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required.', code: 'AUTH_REQUIRED' });
+    }
+    if (req.user.role !== requiredRole) {
+      return res.status(403).json({ error: 'Forbidden: insufficient privileges.', code: 'FORBIDDEN' });
+    }
+    next();
+  };
 }
 
 const DEVICE_COOKIE_NAME = 'vv_device_token';
@@ -192,7 +251,7 @@ async function requireTempAuth(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     if (decoded.scope !== 'otp_pending') {
       return res.status(401).json({
         error: 'Invalid token scope.',
@@ -223,10 +282,13 @@ async function requireTempAuth(req, res, next) {
   }
 }
 
+const requireAdmin = requireRole('admin');
+
 module.exports = {
   signToken,
   setAuthCookie,
   clearAuthCookie,
+  extractToken,
   requireAuth,
   optionalAuth,
   DEVICE_COOKIE_NAME,
@@ -235,5 +297,6 @@ module.exports = {
   extractDeviceToken,
   signTempToken,
   requireTempAuth,
+  requireRole,
+  requireAdmin,
 };
-

@@ -87,9 +87,15 @@ const paymentSchema = new mongoose.Schema(
     // Payment lifecycle status
     status: {
       type: String,
-      enum: ['created', 'paid', 'failed'],
+      enum: ['created', 'verifying', 'paid', 'failed', 'disputed'],
       default: 'created',
       index: true,
+    },
+    disputeDetails: {
+      disputeId: { type: String, default: null },
+      reason: { type: String, default: null },
+      status: { type: String, default: null },
+      createdAt: { type: Date, default: null },
     },
   },
   {

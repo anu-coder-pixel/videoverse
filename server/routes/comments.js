@@ -3,8 +3,163 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Comment = require('../models/Comment');
 const Video = require('../models/Video');
-const { requireAuth, optionalAuth } = require('../middleware/auth');
-const { evaluateComment, detectLanguage } = require('../utils/moderation');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+const { requireAuth, optionalAuth, requireRole } = require('../middleware/auth');
+const {
+  evaluateComment,
+  detectLanguage,
+  generateCaptchaChallenge,
+  verifyCaptchaChallenge,
+  checkCommentFlood,
+  resetCommentFlood,
+} = require('../utils/moderation');
+const CommentReport = require('../models/CommentReport');
+const { commentPostLimiter } = require('../middleware/rateLimiter');
+
+// In-memory cache for comment translations (cacheKey: "commentId:target" -> response object)
+const translationCache = new Map();
+// In-flight translation promises to coalesce concurrent duplicate requests
+const inFlightTranslations = new Map();
+
+/**
+ * GET /api/comments/challenge
+ * Issues a mathematical CAPTCHA challenge for comment flood deterrence
+ */
+router.get('/comments/challenge', (req, res) => {
+  const challenge = generateCaptchaChallenge();
+  return res.json({ success: true, challenge });
+});
+
+/**
+ * GET /api/comments/mention-search
+ *
+ * Protected access: Requires authenticated user (requireAuth).
+ * Securely searches users for autocomplete @mentions.
+ * Security: Strictly projects public fields only (_id, name, username, avatarColor, initials).
+ * Never exposes email, role, passwordHash, billing, or telemetry.
+ */
+router.get('/comments/mention-search', requireAuth, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || typeof q !== 'string' || !q.trim()) {
+      return res.json({ users: [] });
+    }
+
+    const sanitized = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${sanitized}`, 'i');
+    const containsRegex = new RegExp(sanitized, 'i');
+
+    const users = await User.find({
+      isSuspended: { $ne: true },
+      $or: [
+        { username: regex },
+        { name: regex },
+        { name: containsRegex },
+      ],
+    })
+      .select('_id name username avatarColor initials')
+      .limit(8)
+      .lean();
+
+    const safeUsers = users.map(u => ({
+      id: u._id.toString(),
+      name: u.name,
+      username: u.username || u.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+      avatarColor: u.avatarColor || '#6c63ff',
+      initials: u.initials || u.name.slice(0, 2).toUpperCase(),
+    }));
+
+    return res.json({ users: safeUsers });
+  } catch (err) {
+    console.error('[Mention Search Error]', err);
+    return res.status(500).json({ error: 'Failed to search users for mentions.' });
+  }
+});
+
+/**
+ * GET /api/comments/notifications
+ *
+ * Protected access: Requires authenticated user (requireAuth).
+ * Returns real in-app notifications (mentions and replies) for the current user.
+ */
+router.get('/comments/notifications', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const notifications = await Notification.find({ recipient: userId })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .lean();
+
+    const unreadCount = await Notification.countDocuments({ recipient: userId, isRead: false });
+
+    return res.json({
+      unreadCount,
+      notifications: notifications.map(n => ({
+        id: n._id.toString(),
+        type: n.type,
+        senderName: n.senderName,
+        senderInitials: n.senderInitials,
+        senderColor: n.senderColor,
+        videoId: n.videoId,
+        videoTitle: n.videoTitle || 'Video',
+        commentId: n.commentId ? n.commentId.toString() : null,
+        commentText: n.commentText,
+        isRead: !!n.isRead,
+        createdAt: n.createdAt,
+      })),
+    });
+  } catch (err) {
+    console.error('[Get Notifications Error]', err);
+    return res.status(500).json({ error: 'Failed to fetch notifications.' });
+  }
+});
+
+/**
+ * PUT /api/comments/notifications/:id/read
+ * Marks a single notification as read.
+ */
+router.put('/comments/notifications/:id/read', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid notification ID format.' });
+    }
+
+    const notif = await Notification.findOneAndUpdate(
+      { _id: id, recipient: req.user._id },
+      { $set: { isRead: true } },
+      { new: true }
+    );
+
+    if (!notif) {
+      return res.status(404).json({ error: 'Notification not found.' });
+    }
+
+    return res.json({ success: true, notificationId: id, isRead: true });
+  } catch (err) {
+    console.error('[Mark Read Error]', err);
+    return res.status(500).json({ error: 'Failed to mark notification as read.' });
+  }
+});
+
+/**
+ * PUT /api/comments/notifications/read-all
+ * Marks all notifications for the user as read.
+ */
+router.put('/comments/notifications/read-all', requireAuth, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipient: req.user._id, isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    return res.json({ success: true, message: 'All notifications marked as read.' });
+  } catch (err) {
+    console.error('[Mark All Read Error]', err);
+    return res.status(500).json({ error: 'Failed to mark all notifications as read.' });
+  }
+});
 
 /**
  * GET /api/videos/:videoId/comments
@@ -76,16 +231,56 @@ router.get('/videos/:videoId/comments', optionalAuth, async (req, res) => {
         hasDisliked: !!hasDisliked,
         isEdited: !!doc.isEdited,
         editedAt: doc.editedAt || null,
+        isDeleted: !!doc.isDeleted,
+        deletedAt: doc.deletedAt || null,
         location: doc.location || '',
         parentId: doc.parentId ? doc.parentId.toString() : null,
+        mentions: Array.isArray(doc.mentions) ? doc.mentions.map(m => ({
+          userId: m.userId ? m.userId.toString() : null,
+          username: m.username || '',
+          name: m.name || '',
+        })) : [],
         createdAt: doc.createdAt,
         timeAgo: formatTimeAgo(doc.createdAt),
       };
     });
 
+    // Organize into threaded hierarchy: top-level comments with nested replies
+    const commentMap = new Map();
+    const topLevelComments = [];
+
+    safeComments.forEach(c => {
+      c.replies = [];
+      commentMap.set(c.id, c);
+    });
+
+    safeComments.forEach(c => {
+      if (c.parentId && commentMap.has(c.parentId)) {
+        const parent = commentMap.get(c.parentId);
+        parent.replies.push(c);
+      } else if (!c.parentId) {
+        topLevelComments.push(c);
+      } else {
+        // Orphaned reply whose parent was hard-deleted or is absent:
+        // Keep it visible as an active discussion item
+        topLevelComments.push(c);
+      }
+    });
+
+    // Ensure replies on each parent are sorted chronologically ascending
+    topLevelComments.forEach(c => {
+      if (Array.isArray(c.replies) && c.replies.length > 0) {
+        c.replies.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        c.repliesCount = c.replies.length;
+      } else {
+        c.repliesCount = 0;
+      }
+    });
+
     res.json({
       total: safeComments.length,
-      comments: safeComments,
+      comments: topLevelComments,
+      allComments: safeComments,
     });
   } catch (err) {
     console.error('[Get Comments Error]', err);
@@ -104,10 +299,10 @@ router.get('/videos/:videoId/comments', optionalAuth, async (req, res) => {
  *   - Borderline / spam content  → saved as 'flagged', not visible in public feed, returns HTTP 201 with notice.
  *   - Clean content              → saved as 'approved', returns HTTP 201 with full comment object.
  */
-router.post('/videos/:videoId/comments', requireAuth, async (req, res) => {
+router.post('/videos/:videoId/comments', requireAuth, commentPostLimiter, async (req, res) => {
   try {
     const { videoId } = req.params;
-    const { text } = req.body;
+    const { text, parentId, mentions: clientMentions } = req.body;
 
     if (!videoId) {
       return res.status(400).json({ error: 'Video ID is required.' });
@@ -119,6 +314,71 @@ router.post('/videos/:videoId/comments', requireAuth, async (req, res) => {
 
     if (text.trim().length > 1000) {
       return res.status(400).json({ error: 'Comment cannot exceed 1000 characters.' });
+    }
+
+    // Validate parent comment if this is a reply
+    let validatedParentId = null;
+    let parentComment = null;
+    if (parentId) {
+      if (!mongoose.Types.ObjectId.isValid(parentId)) {
+        return res.status(400).json({ error: 'Invalid parent comment ID format.', code: 'INVALID_PARENT_ID' });
+      }
+      parentComment = await Comment.findById(parentId);
+      if (!parentComment) {
+        return res.status(404).json({ error: 'Parent comment not found.', code: 'PARENT_NOT_FOUND' });
+      }
+      // Ensure parent comment belongs to the same video
+      const parentVideoId = parentComment.videoId;
+      const targetVideo = await Video.findOne({
+        $or: [
+          { id: videoId },
+          ...(mongoose.Types.ObjectId.isValid(videoId) ? [{ _id: videoId }] : [])
+        ]
+      });
+      if (targetVideo && parentVideoId !== targetVideo.id) {
+        return res.status(400).json({ error: 'Parent comment does not belong to this video.', code: 'VIDEO_MISMATCH' });
+      }
+      validatedParentId = parentComment._id;
+    }
+
+    // 1. CAPTCHA verification if challenge token provided or flooding detected
+    const { challengeToken, challengeAnswer } = req.body;
+    if (challengeToken) {
+      const isValidChallenge = verifyCaptchaChallenge(challengeToken, challengeAnswer);
+      if (!isValidChallenge) {
+        return res.status(400).json({
+          error: 'Security challenge failed or expired. Please solve the new challenge.',
+          code: 'CHALLENGE_FAILED',
+          requiresChallenge: true,
+          challenge: generateCaptchaChallenge(),
+        });
+      }
+      resetCommentFlood(req.user._id);
+    } else {
+      // Check flood frequency: > 3 comments within 60s requires CAPTCHA challenge
+      const floodCheck = checkCommentFlood(req.user._id, 3, 60000);
+      if (floodCheck.isFlooding) {
+        return res.status(429).json({
+          error: 'You are posting comments too quickly. Please solve the security challenge to continue.',
+          code: 'CHALLENGE_REQUIRED',
+          requiresChallenge: true,
+          challenge: generateCaptchaChallenge(),
+        });
+      }
+    }
+
+    // 2. Duplicate comment detection: identical comment by same user within 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const existingDuplicate = await Comment.findOne({
+      userId: req.user._id,
+      text: text.trim(),
+      createdAt: { $gt: fiveMinutesAgo },
+    });
+    if (existingDuplicate) {
+      return res.status(400).json({
+        error: 'Duplicate comment detected. You have already posted this identical comment recently.',
+        code: 'DUPLICATE_COMMENT',
+      });
     }
 
     // Verify video exists
@@ -143,6 +403,56 @@ router.post('/videos/:videoId/comments', requireAuth, async (req, res) => {
       });
     }
 
+    // 3. Resolve and deduplicate @mentions
+    // Extract mentions from text (e.g. @alice or @john_doe)
+    const mentionRegex = /@([a-zA-Z0-9_]{2,30})/g;
+    const extractedHandles = new Set();
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      extractedHandles.add(match[1].toLowerCase());
+    }
+
+    // Look up mentioned users from database
+    const handleArray = Array.from(extractedHandles);
+    let resolvedUsers = [];
+    if (handleArray.length > 0) {
+      resolvedUsers = await User.find({
+        isSuspended: { $ne: true },
+        $or: [
+          { username: { $in: handleArray } },
+          { name: { $in: handleArray.map(h => new RegExp(`^${h.replace(/_/g, ' ')}$`, 'i')) } },
+        ]
+      }).select('_id name username').lean();
+    }
+
+    // Combine with any explicitly supplied client mentions (validating they exist)
+    if (Array.isArray(clientMentions) && clientMentions.length > 0) {
+      const explicitIds = clientMentions
+        .map(m => m.userId || m.id)
+        .filter(id => mongoose.Types.ObjectId.isValid(id));
+      if (explicitIds.length > 0) {
+        const explicitUsers = await User.find({
+          _id: { $in: explicitIds },
+          isSuspended: { $ne: true },
+        }).select('_id name username').lean();
+        resolvedUsers = [...resolvedUsers, ...explicitUsers];
+      }
+    }
+
+    // Deduplicate mentioned users by user ID
+    const uniqueMentionsMap = new Map();
+    for (const u of resolvedUsers) {
+      const uIdStr = u._id.toString();
+      if (!uniqueMentionsMap.has(uIdStr)) {
+        uniqueMentionsMap.set(uIdStr, {
+          userId: u._id,
+          username: u.username || u.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+          name: u.name,
+        });
+      }
+    }
+    const finalMentions = Array.from(uniqueMentionsMap.values());
+
     // Derive author identity strictly from authenticated user session
     const newComment = new Comment({
       videoId: videoExists.id,
@@ -152,6 +462,8 @@ router.post('/videos/:videoId/comments', requireAuth, async (req, res) => {
       authorColor: req.user.avatarColor,
       text: text.trim(),
       language: moderationResult.language || 'en',
+      parentId: validatedParentId,
+      mentions: finalMentions,
       moderationStatus: moderationResult.status, // 'approved' or 'flagged'
       moderationReason: moderationResult.reason || '',
       likedBy: [],
@@ -159,6 +471,63 @@ router.post('/videos/:videoId/comments', requireAuth, async (req, res) => {
     });
 
     await newComment.save();
+
+    // 4. Create in-app notifications if comment is approved
+    if (moderationResult.status === 'approved') {
+      const senderIdStr = req.user._id.toString();
+
+      // Mention Notifications: Notify each mentioned user (skipping self-mentions)
+      for (const m of finalMentions) {
+        const recipientIdStr = m.userId.toString();
+        if (recipientIdStr !== senderIdStr) {
+          try {
+            await Notification.create({
+              recipient: m.userId,
+              sender: req.user._id,
+              senderName: req.user.name,
+              senderInitials: req.user.initials,
+              senderColor: req.user.avatarColor,
+              type: 'mention',
+              videoId: videoExists.id,
+              videoTitle: videoExists.title || '',
+              commentId: newComment._id,
+              commentText: newComment.text.slice(0, 150),
+            });
+          } catch (notifErr) {
+            // Unique index prevents duplicate notifications; ignore duplicate key errors
+            if (notifErr.code !== 11000) {
+              console.warn('[Notification Create Error]', notifErr.message);
+            }
+          }
+        }
+      }
+
+      // Reply Notification: If replying to a parent comment, notify parent author
+      if (parentComment && parentComment.userId) {
+        const parentAuthorIdStr = parentComment.userId.toString();
+        // Do not notify if replying to own comment or already notified via mention
+        if (parentAuthorIdStr !== senderIdStr && !uniqueMentionsMap.has(parentAuthorIdStr)) {
+          try {
+            await Notification.create({
+              recipient: parentComment.userId,
+              sender: req.user._id,
+              senderName: req.user.name,
+              senderInitials: req.user.initials,
+              senderColor: req.user.avatarColor,
+              type: 'reply',
+              videoId: videoExists.id,
+              videoTitle: videoExists.title || '',
+              commentId: newComment._id,
+              commentText: newComment.text.slice(0, 150),
+            });
+          } catch (replyNotifErr) {
+            if (replyNotifErr.code !== 11000) {
+              console.warn('[Reply Notification Create Error]', replyNotifErr.message);
+            }
+          }
+        }
+      }
+    }
 
     // If flagged, it is saved for review and will NOT appear in public feed
     if (moderationResult.status === 'flagged') {
@@ -376,9 +745,23 @@ router.put('/comments/:commentId', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Comment not found.' });
     }
 
-    // Ownership check
-    if (comment.userId.toString() !== req.user._id.toString()) {
+    // Ownership and 15-minute window check
+    const isAuthor = comment.userId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isAuthor && !isAdmin) {
       return res.status(403).json({ error: 'You are not authorized to edit this comment.' });
+    }
+
+    if (!isAdmin) {
+      const elapsedMs = Date.now() - new Date(comment.createdAt).getTime();
+      if (elapsedMs > 15 * 60 * 1000) {
+        return res.status(403).json({
+          error: 'Comments can only be edited within 15 minutes of posting.',
+          code: 'TIME_LIMIT_EXCEEDED',
+          elapsedMinutes: Math.floor(elapsedMs / 60000),
+        });
+      }
     }
 
     // Moderation evaluation
@@ -396,6 +779,60 @@ router.put('/comments/:commentId', requireAuth, async (req, res) => {
     comment.moderationReason = moderationResult.reason || '';
     comment.isEdited = true;
     comment.editedAt = new Date();
+
+    // Re-evaluate mentions on edit
+    const mentionRegex = /@([a-zA-Z0-9_]{2,30})/g;
+    const extractedHandles = new Set();
+    let mMatch;
+    while ((mMatch = mentionRegex.exec(text)) !== null) {
+      extractedHandles.add(mMatch[1].toLowerCase());
+    }
+
+    if (extractedHandles.size > 0) {
+      const handleArray = Array.from(extractedHandles);
+      const mentionedUsers = await User.find({
+        isSuspended: { $ne: true },
+        $or: [
+          { username: { $in: handleArray } },
+          { name: { $in: handleArray.map(h => new RegExp(`^${h.replace(/_/g, ' ')}$`, 'i')) } },
+        ]
+      }).select('_id name username').lean();
+
+      const newMentionsMap = new Map();
+      mentionedUsers.forEach(u => {
+        newMentionsMap.set(u._id.toString(), {
+          userId: u._id,
+          username: u.username || u.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+          name: u.name,
+        });
+      });
+      comment.mentions = Array.from(newMentionsMap.values());
+
+      // If approved, notify newly mentioned users
+      if (moderationResult.status === 'approved') {
+        const senderIdStr = req.user._id.toString();
+        for (const m of comment.mentions) {
+          const recIdStr = m.userId.toString();
+          if (recIdStr !== senderIdStr) {
+            try {
+              await Notification.create({
+                recipient: m.userId,
+                sender: req.user._id,
+                senderName: req.user.name,
+                senderInitials: req.user.initials,
+                senderColor: req.user.avatarColor,
+                type: 'mention',
+                videoId: comment.videoId,
+                commentId: comment._id,
+                commentText: comment.text.slice(0, 150),
+              });
+            } catch (nErr) {
+              // Ignore duplicate notifications
+            }
+          }
+        }
+      }
+    }
 
     await comment.save();
 
@@ -431,18 +868,56 @@ router.delete('/comments/:commentId', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Comment not found.' });
     }
 
-    // Ownership check
-    if (comment.userId.toString() !== req.user._id.toString()) {
+    // Ownership and 15-minute window check: author within 15 mins or admin anytime
+    const isAuthor = comment.userId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isAuthor && !isAdmin) {
       return res.status(403).json({ error: 'You are not authorized to delete this comment.' });
     }
 
-    // Delete comment and any replies referencing it
-    await Comment.deleteMany({
-      $or: [
-        { _id: commentId },
-        { parentId: commentId }
-      ]
+    if (!isAdmin) {
+      const elapsedMs = Date.now() - new Date(comment.createdAt).getTime();
+      if (elapsedMs > 15 * 60 * 1000) {
+        return res.status(403).json({
+          error: 'Comments can only be deleted within 15 minutes of posting.',
+          code: 'TIME_LIMIT_EXCEEDED',
+          elapsedMinutes: Math.floor(elapsedMs / 60000),
+        });
+      }
+    }
+
+    // Check if this comment has existing replies
+    const existingRepliesCount = await Comment.countDocuments({
+      parentId: commentId,
+      moderationStatus: 'approved',
     });
+
+    if (existingRepliesCount > 0) {
+      // Soft-delete to preserve reply thread continuity
+      comment.isDeleted = true;
+      comment.deletedAt = new Date();
+      comment.text = '[This comment has been deleted]';
+      comment.author = '[Deleted]';
+      comment.authorInitials = 'D';
+      comment.authorColor = '#666666';
+      await comment.save();
+
+      // Clean up notifications pointing to this deleted comment
+      await Notification.deleteMany({ commentId });
+
+      return res.json({
+        success: true,
+        message: 'Comment deleted successfully.',
+        deletedCommentId: commentId,
+        softDeleted: true,
+      });
+    }
+
+    // No replies: hard-delete comment and remove any pending reports/notifications
+    await Comment.findByIdAndDelete(commentId);
+    await Notification.deleteMany({ commentId });
+    await CommentReport.deleteMany({ commentId });
 
     return res.json({
       success: true,
@@ -458,6 +933,7 @@ router.delete('/comments/:commentId', requireAuth, async (req, res) => {
 // Scoped dictionary for high-frequency Hinglish and colloquial phrases
 const HINGLISH_DICTIONARY = {
   'bahut badhiya': 'Very good',
+  'bahut badhiya video': 'Very good video',
   'bahut accha': 'Very good',
   'bahut accha video': 'Very good video',
   'kya haal hai': 'How are you?',
@@ -739,6 +1215,169 @@ function transliterateHinglish(text) {
  *   - Never returns fake or unchanged text as successful translation
  *   - Respects user privacy: only the single text string is sent over HTTPS to MyMemory
  */
+/**
+ * Helper to compute translation via dictionaries or external API
+ */
+async function computeCommentTranslation(sourceText, target) {
+  // Re-evaluate language directly on sourceText as the authoritative source of truth
+  const sourceLang = detectLanguage(sourceText);
+
+  // If legitimately already in target language (genuine English comment targeting English)
+  if (sourceLang === target) {
+    return {
+      translated: false,
+      alreadyTargetLanguage: true,
+      sourceLanguage: sourceLang,
+      targetLanguage: target,
+      message: `Comment is already in ${target === 'en' ? 'English' : target}.`,
+    };
+  }
+
+  // 1. Check scoped Bengali dictionary (Roman Bengali & Bengali script)
+  if (sourceLang === 'bn' && target === 'en') {
+    const normBengali = normalizeBengali(sourceText);
+    const dictMatch = BENGALI_DICTIONARY[normBengali] || BENGALI_DICTIONARY[sourceText];
+    if (dictMatch) {
+      return {
+        translated: true,
+        translatedText: dictMatch,
+        sourceLanguage: 'bn',
+        targetLanguage: 'en',
+        provider: 'VideoVerse Bengali Dictionary',
+        privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+        limitations: 'Curated colloquial translation dictionary.',
+      };
+    }
+  }
+
+  // 2. Check scoped Hinglish / Hindi dictionary if source is Hindi targeting English
+  if (sourceLang === 'hi' && target === 'en') {
+    const normHinglish = normalizeHinglish(sourceText);
+    const dictMatch = HINGLISH_DICTIONARY[normHinglish] || HINGLISH_DICTIONARY[sourceText];
+    if (dictMatch) {
+      return {
+        translated: true,
+        translatedText: dictMatch,
+        sourceLanguage: 'hi',
+        targetLanguage: 'en',
+        provider: 'VideoVerse Hinglish Dictionary',
+        privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+        limitations: 'Curated colloquial translation dictionary.',
+      };
+    }
+  }
+
+  // 3. Check Regional Indic dictionary (Tamil, Telugu, Malayalam, Marathi, Gujarati, Punjabi, Portuguese)
+  if (REGIONAL_INDIC_DICTIONARY[sourceLang] && target === 'en') {
+    const normText = sourceText.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    const regionalMatch = REGIONAL_INDIC_DICTIONARY[sourceLang][normText] || REGIONAL_INDIC_DICTIONARY[sourceLang][sourceText];
+    if (regionalMatch) {
+      return {
+        translated: true,
+        translatedText: regionalMatch,
+        sourceLanguage: sourceLang,
+        targetLanguage: 'en',
+        provider: 'VideoVerse Regional Dictionary',
+        privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+        limitations: 'Curated colloquial translation dictionary.',
+      };
+    }
+  }
+
+  // 4. Check common European unaccented phrase fallbacks
+  if (COMMON_PHRASES_DICTIONARY[sourceLang] && target === 'en') {
+    const normPhrase = sourceText.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+    const phraseMatch = COMMON_PHRASES_DICTIONARY[sourceLang][normPhrase];
+    if (phraseMatch) {
+      return {
+        translated: true,
+        translatedText: phraseMatch,
+        sourceLanguage: sourceLang,
+        targetLanguage: 'en',
+        provider: 'VideoVerse Phrase Dictionary',
+        privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
+        limitations: 'Curated colloquial translation dictionary.',
+      };
+    }
+  }
+
+  // 5. Determine query string for remote translation
+  let queryText = sourceText;
+  if (sourceLang === 'hi' && !/[\u0900-\u097F]/.test(sourceText)) {
+    queryText = transliterateHinglish(sourceText);
+  } else if (sourceLang === 'bn' && !/[\u0980-\u09FF]/.test(sourceText)) {
+    queryText = transliterateBengali(sourceText);
+  }
+
+  // Call external translation service with a strict timeout (4 seconds)
+  try {
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${sourceLang}|${target}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+
+    if (!response.ok) {
+      return {
+        translated: false,
+        error: 'Translation service is temporarily unavailable.',
+      };
+    }
+
+    const data = await response.json();
+    const rawTranslated = data.responseData?.translatedText;
+
+    // Filter out quota warning messages and ensure authentic translation
+    const isQuotaWarning = typeof rawTranslated === 'string' &&
+      (rawTranslated.toUpperCase().includes('MYMEMORY WARNING') ||
+       data.responseDetails?.toUpperCase().includes('MYMEMORY WARNING') ||
+       data.responseStatus === 403 ||
+       data.responseStatus === 429);
+
+    if (
+      !isQuotaWarning &&
+      rawTranslated &&
+      typeof rawTranslated === 'string' &&
+      rawTranslated.trim() &&
+      rawTranslated.trim().toLowerCase() !== sourceText.toLowerCase() &&
+      rawTranslated.trim().toLowerCase() !== queryText.toLowerCase()
+    ) {
+      return {
+        translated: true,
+        translatedText: rawTranslated.trim(),
+        sourceLanguage: sourceLang,
+        targetLanguage: target,
+        provider: 'MyMemory (Translated.net)',
+        privacyNote: 'Comment snippet processed over HTTPS for translation via MyMemory API. No user identifiable data or author information is shared.',
+        limitations: 'Free-tier public translation service subject to rate limits and community memory quality.',
+      };
+    } else {
+      return {
+        translated: false,
+        error: isQuotaWarning
+          ? 'Translation rate limit reached for today. Displaying original text.'
+          : 'No reliable translation could be determined for this text.',
+      };
+    }
+  } catch (networkErr) {
+    console.warn('[Translation Service Network/Timeout]', networkErr.message);
+    return {
+      translated: false,
+      error: 'Translation service timed out or is currently unreachable.',
+    };
+  }
+}
+
+/**
+ * GET /api/comments/:commentId/translate
+ *
+ * Public access: Translate a comment into target language (default: 'en').
+ * Graceful handling:
+ *   - Re-evaluates source script/language dynamically on current text
+ *   - Checks if legitimately already in target language
+ *   - Uses curated dictionaries for Bengali, Hindi/Hinglish, Indic, and European phrases
+ *   - Performs transliteration before remote translation when appropriate
+ *   - In-memory cache + concurrent request coalescing
+ *   - Never returns fake or unchanged text as successful translation
+ *   - Respects user privacy: only the single text string is sent over HTTPS to MyMemory
+ */
 router.get('/comments/:commentId/translate', async (req, res) => {
   try {
     const { commentId } = req.params;
@@ -754,151 +1393,37 @@ router.get('/comments/:commentId/translate', async (req, res) => {
     }
 
     const sourceText = comment.text.trim();
+    const cacheKey = `${commentId}:${target}`;
 
-    // Re-evaluate language directly on sourceText as the authoritative source of truth
-    const sourceLang = detectLanguage(sourceText);
-
-    // If legitimately already in target language (genuine English comment targeting English)
-    if (sourceLang === target) {
-      return res.json({
-        translated: false,
-        alreadyTargetLanguage: true,
-        sourceLanguage: sourceLang,
-        targetLanguage: target,
-        message: `Comment is already in ${target === 'en' ? 'English' : target}.`,
-      });
+    // 1. Return immediately from cache if available
+    if (translationCache.has(cacheKey)) {
+      return res.json({ ...translationCache.get(cacheKey), cached: true });
     }
 
-    // 1. Check scoped Bengali dictionary (Roman Bengali & Bengali script)
-    if (sourceLang === 'bn' && target === 'en') {
-      const normBengali = normalizeBengali(sourceText);
-      const dictMatch = BENGALI_DICTIONARY[normBengali] || BENGALI_DICTIONARY[sourceText];
-      if (dictMatch) {
-        return res.json({
-          translated: true,
-          translatedText: dictMatch,
-          sourceLanguage: 'bn',
-          targetLanguage: 'en',
-          provider: 'VideoVerse Bengali Dictionary',
-          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
-          limitations: 'Curated colloquial translation dictionary.',
-        });
-      }
+    // 2. Coalesce concurrent identical requests using in-flight promise
+    let translationPromise = inFlightTranslations.get(cacheKey);
+    if (!translationPromise) {
+      translationPromise = (async () => {
+        try {
+          const result = await computeCommentTranslation(sourceText, target);
+          // Only cache positive results (not transient errors or rate limits)
+          if (result && (result.translated || result.alreadyTargetLanguage)) {
+            translationCache.set(cacheKey, result);
+            // 1 hour TTL
+            setTimeout(() => {
+              translationCache.delete(cacheKey);
+            }, 3600000);
+          }
+          return result;
+        } finally {
+          inFlightTranslations.delete(cacheKey);
+        }
+      })();
+      inFlightTranslations.set(cacheKey, translationPromise);
     }
 
-    // 2. Check scoped Hinglish / Hindi dictionary if source is Hindi targeting English
-    if (sourceLang === 'hi' && target === 'en') {
-      const normHinglish = normalizeHinglish(sourceText);
-      const dictMatch = HINGLISH_DICTIONARY[normHinglish] || HINGLISH_DICTIONARY[sourceText];
-      if (dictMatch) {
-        return res.json({
-          translated: true,
-          translatedText: dictMatch,
-          sourceLanguage: 'hi',
-          targetLanguage: 'en',
-          provider: 'VideoVerse Hinglish Dictionary',
-          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
-          limitations: 'Curated colloquial translation dictionary.',
-        });
-      }
-    }
-
-    // 3. Check Regional Indic dictionary (Tamil, Telugu, Malayalam, Marathi, Gujarati, Punjabi, Portuguese)
-    if (REGIONAL_INDIC_DICTIONARY[sourceLang] && target === 'en') {
-      const normText = sourceText.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
-      const regionalMatch = REGIONAL_INDIC_DICTIONARY[sourceLang][normText] || REGIONAL_INDIC_DICTIONARY[sourceLang][sourceText];
-      if (regionalMatch) {
-        return res.json({
-          translated: true,
-          translatedText: regionalMatch,
-          sourceLanguage: sourceLang,
-          targetLanguage: 'en',
-          provider: 'VideoVerse Regional Dictionary',
-          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
-          limitations: 'Curated colloquial translation dictionary.',
-        });
-      }
-    }
-
-    // 4. Check common European unaccented phrase fallbacks
-    if (COMMON_PHRASES_DICTIONARY[sourceLang] && target === 'en') {
-      const normPhrase = sourceText.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-      const phraseMatch = COMMON_PHRASES_DICTIONARY[sourceLang][normPhrase];
-      if (phraseMatch) {
-        return res.json({
-          translated: true,
-          translatedText: phraseMatch,
-          sourceLanguage: sourceLang,
-          targetLanguage: 'en',
-          provider: 'VideoVerse Phrase Dictionary',
-          privacyNote: 'Comment processed locally. No user identifiable data or author information is shared.',
-          limitations: 'Curated colloquial translation dictionary.',
-        });
-      }
-    }
-
-    // 5. Determine query string for remote translation
-    let queryText = sourceText;
-    if (sourceLang === 'hi' && !/[\u0900-\u097F]/.test(sourceText)) {
-      queryText = transliterateHinglish(sourceText);
-    } else if (sourceLang === 'bn' && !/[\u0980-\u09FF]/.test(sourceText)) {
-      queryText = transliterateBengali(sourceText);
-    }
-
-    // Call external translation service with a strict timeout (4 seconds)
-    try {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${sourceLang}|${target}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
-
-      if (!response.ok) {
-        return res.json({
-          translated: false,
-          error: 'Translation service is temporarily unavailable.',
-        });
-      }
-
-      const data = await response.json();
-      const rawTranslated = data.responseData?.translatedText;
-
-      // Filter out quota warning messages and ensure authentic translation
-      const isQuotaWarning = typeof rawTranslated === 'string' &&
-        (rawTranslated.toUpperCase().includes('MYMEMORY WARNING') ||
-         data.responseDetails?.toUpperCase().includes('MYMEMORY WARNING') ||
-         data.responseStatus === 403 ||
-         data.responseStatus === 429);
-
-      if (
-        !isQuotaWarning &&
-        rawTranslated &&
-        typeof rawTranslated === 'string' &&
-        rawTranslated.trim() &&
-        rawTranslated.trim().toLowerCase() !== sourceText.toLowerCase() &&
-        rawTranslated.trim().toLowerCase() !== queryText.toLowerCase()
-      ) {
-        return res.json({
-          translated: true,
-          translatedText: rawTranslated.trim(),
-          sourceLanguage: sourceLang,
-          targetLanguage: target,
-          provider: 'MyMemory (Translated.net)',
-          privacyNote: 'Comment snippet processed over HTTPS for translation via MyMemory API. No user identifiable data or author information is shared.',
-          limitations: 'Free-tier public translation service subject to rate limits and community memory quality.',
-        });
-      } else {
-        return res.json({
-          translated: false,
-          error: isQuotaWarning
-            ? 'Translation rate limit reached for today. Displaying original text.'
-            : 'No reliable translation could be determined for this text.',
-        });
-      }
-    } catch (networkErr) {
-      console.warn('[Translation Service Network/Timeout]', networkErr.message);
-      return res.json({
-        translated: false,
-        error: 'Translation service timed out or is currently unreachable.',
-      });
-    }
+    const responseData = await translationPromise;
+    return res.json(responseData);
   } catch (err) {
     console.error('[Translate Comment Error]', err);
     res.status(500).json({ error: 'Failed to process translation request.' });
@@ -923,5 +1448,223 @@ function formatTimeAgo(date) {
   const years = Math.floor(months / 12);
   return `${years}y ago`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Content Moderation & Reporting Endpoints (Phase 2, Step 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/comments/:commentId/report
+ *
+ * Allows authenticated users to report inappropriate comments for administrator review.
+ * Predefined reasons: spam, harassment, hate_speech, misinformation, offensive, other.
+ * Edge cases handled:
+ * - Duplicate report prevention (one report per user per comment)
+ * - Flags comment for admin review rather than auto-deleting on reports
+ * - Maintains complete audit record in CommentReport
+ */
+router.post('/comments/:commentId/report', requireAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { reason, details } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid comment ID format.', code: 'INVALID_ID' });
+    }
+
+    const validReasons = ['spam', 'harassment', 'hate_speech', 'misinformation', 'offensive', 'other'];
+    if (!reason || !validReasons.includes(reason)) {
+      return res.status(400).json({
+        error: `Please select a valid report reason: ${validReasons.join(', ')}`,
+        code: 'INVALID_REASON',
+      });
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.', code: 'NOT_FOUND' });
+    }
+
+    // Check duplicate report by same user
+    const existingReport = await CommentReport.findOne({
+      commentId,
+      reportedBy: req.user._id,
+    });
+    if (existingReport) {
+      return res.status(409).json({
+        error: 'You have already reported this comment. An administrator is reviewing it.',
+        code: 'ALREADY_REPORTED',
+      });
+    }
+
+    // Create report record
+    const report = await CommentReport.create({
+      commentId,
+      videoId: comment.videoId,
+      reportedBy: req.user._id,
+      reason,
+      details: details ? String(details).slice(0, 500) : '',
+      status: 'pending',
+    });
+
+    // Increment comment report count and flag for review if currently approved
+    const updateOps = { $inc: { reportCount: 1 } };
+    if (comment.moderationStatus === 'approved') {
+      updateOps.$set = {
+        moderationStatus: 'flagged',
+        moderationReason: `Reported by user for: ${reason}`,
+      };
+    }
+    const updatedComment = await Comment.findByIdAndUpdate(commentId, updateOps, { returnDocument: 'after' });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Comment has been reported for administrator review.',
+      reportId: report._id.toString(),
+      reportCount: updatedComment.reportCount,
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({
+        error: 'You have already reported this comment.',
+        code: 'ALREADY_REPORTED',
+      });
+    }
+    console.error('[Report Comment Error]', err);
+    return res.status(500).json({ error: 'Failed to report comment.' });
+  }
+});
+
+/**
+ * GET /api/admin/moderation/comments
+ *
+ * Admin only: Lists comments flagged or reported for review.
+ * Query: ?status=flagged|pending|all&page=1&limit=20
+ */
+router.get('/admin/moderation/comments', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { status = 'flagged', page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (status !== 'all') {
+      filter.moderationStatus = status;
+    }
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    const comments = await Comment.find(filter)
+      .sort({ reportCount: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+
+    const total = await Comment.countDocuments(filter);
+
+    // Fetch reports for these comments
+    const commentIds = comments.map(c => c._id);
+    const reports = await CommentReport.find({ commentId: { $in: commentIds } })
+      .populate('reportedBy', 'name email')
+      .lean();
+
+    const reportsByComment = {};
+    for (const r of reports) {
+      const cid = r.commentId.toString();
+      if (!reportsByComment[cid]) reportsByComment[cid] = [];
+      reportsByComment[cid].push({
+        id: r._id.toString(),
+        reason: r.reason,
+        details: r.details,
+        reportedBy: r.reportedBy ? { name: r.reportedBy.name, email: r.reportedBy.email } : null,
+        status: r.status,
+        createdAt: r.createdAt,
+      });
+    }
+
+    const queue = comments.map(c => ({
+      ...c,
+      id: c._id.toString(),
+      reports: reportsByComment[c._id.toString()] || [],
+    }));
+
+    return res.json({
+      success: true,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      comments: queue,
+    });
+  } catch (err) {
+    console.error('[Admin Moderation Queue Error]', err);
+    return res.status(500).json({ error: 'Failed to load moderation review queue.' });
+  }
+});
+
+/**
+ * POST /api/admin/moderation/comments/:commentId/resolve
+ *
+ * Admin only: Resolves a reported/flagged comment.
+ * Actions:
+ * - 'approve': Approves comment, returning it to public feed. Dismisses pending reports.
+ * - 'reject': Rejects comment, keeping it hidden from public feed. Action taken on reports.
+ * - 'delete': Permanently deletes comment and associated replies. Action taken on reports.
+ */
+router.post('/admin/moderation/comments/:commentId/resolve', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { action, note = '' } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid comment ID format.', code: 'INVALID_ID' });
+    }
+
+    const validActions = ['approve', 'reject', 'delete'];
+    if (!action || !validActions.includes(action)) {
+      return res.status(400).json({
+        error: `Invalid moderation action. Must be one of: ${validActions.join(', ')}`,
+        code: 'INVALID_ACTION',
+      });
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.', code: 'NOT_FOUND' });
+    }
+
+    if (action === 'delete') {
+      await Comment.deleteMany({
+        $or: [{ _id: commentId }, { parentId: commentId }],
+      });
+    } else {
+      comment.moderationStatus = action === 'approve' ? 'approved' : 'rejected';
+      comment.moderationReason = note || `Resolved by admin: ${action}`;
+      await comment.save();
+    }
+
+    // Resolve all associated pending reports
+    const reportStatus = action === 'delete' ? 'action_taken' : action === 'approve' ? 'dismissed' : 'action_taken';
+    await CommentReport.updateMany(
+      { commentId, status: 'pending' },
+      {
+        $set: {
+          status: reportStatus,
+          reviewedBy: req.user._id,
+          reviewedAt: new Date(),
+          adminNote: note || `Admin resolution: ${action}`,
+        },
+      }
+    );
+
+    return res.json({
+      success: true,
+      action,
+      commentId,
+      message: `Comment moderation resolved: ${action}.`,
+    });
+  } catch (err) {
+    console.error('[Admin Resolve Error]', err);
+    return res.status(500).json({ error: 'Failed to resolve moderation action.' });
+  }
+});
 
 module.exports = router;

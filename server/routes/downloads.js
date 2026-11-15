@@ -1,15 +1,40 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 const { Readable } = require('stream');
+
 const Video = require('../models/Video');
 const Download = require('../models/Download');
+const User = require('../models/User');
 const { requireAuth } = require('../middleware/auth');
 const { sanitizeFilename, safeFetchVideo } = require('../utils/downloadSecurity');
+const {
+  hashToken,
+  generateDownloadToken,
+  verifyDownloadToken,
+  generateOfflinePlaybackToken,
+  verifyOfflinePlaybackToken,
+} = require('../utils/signedUrl');
+const {
+  buildWatermarkText,
+  applyWatermark,
+  getWatermarkedPath,
+  WATERMARKED_DIR,
+} = require('../utils/watermarkService');
 
 const DEFAULT_DAILY_LIMIT = 1; // Free tier limit: exactly 1 download per 24 hours
 const RESERVATION_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 const QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;  // 24 hours
+
+const UPLOAD_ROOT = path.resolve(__dirname, '../uploads');
+const VIDEOS_DIR = path.join(UPLOAD_ROOT, 'videos');
+const TEMP_DIR = path.join(UPLOAD_ROOT, 'temp');
+
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true, mode: 0o755 });
+}
 
 /**
  * Normalizes tier names and maps legacy aliases ('vip' -> 'gold', 'premium' -> 'silver')
@@ -62,9 +87,6 @@ async function cleanupStaleReservations(userId) {
 /**
  * Helper: Computes rolling 24-hour distinct video download quota for a user,
  * checking subscription validity and handling expirations safely.
- *
- * @param {import('mongoose').Types.ObjectId} userId
- * @param {object|string} userOrTier User document or tier string
  */
 async function getUserQuotaInfo(userId, userOrTier) {
   let tier = 'free';
@@ -154,8 +176,178 @@ async function getUserQuotaInfo(userId, userOrTier) {
 }
 
 /**
+ * Resolves local or remote source file path for video watermarking.
+ */
+async function resolveVideoSource(video, abortSignal) {
+  // 1. Check direct local storagePath from chunk assembler
+  if (video.storagePath && fs.existsSync(video.storagePath)) {
+    return { sourcePath: video.storagePath, isTemporary: false };
+  }
+
+  // 2. Check standard uploads/videos directory
+  const localStandardPath = path.join(VIDEOS_DIR, `${video.id}.mp4`);
+  if (fs.existsSync(localStandardPath)) {
+    return { sourcePath: localStandardPath, isTemporary: false };
+  }
+
+  // 3. Remote URL fetch
+  if (video.videoUrl && /^https?:\/\//i.test(video.videoUrl)) {
+    const fetchResult = await safeFetchVideo(video.videoUrl, video.fallbackUrl, abortSignal);
+    const tempSrcPath = path.join(TEMP_DIR, `dl_src_${video.id}_${Date.now()}.mp4`);
+    const nodeStream = Readable.fromWeb(fetchResult.response.body);
+
+    await new Promise((resolve, reject) => {
+      const fileOut = fs.createWriteStream(tempSrcPath);
+      nodeStream.pipe(fileOut);
+      fileOut.on('finish', resolve);
+      fileOut.on('error', reject);
+      nodeStream.on('error', reject);
+    });
+
+    return { sourcePath: tempSrcPath, isTemporary: true };
+  }
+
+  // 4. Fallback check for any matching file in uploads/videos
+  if (fs.existsSync(VIDEOS_DIR)) {
+    const files = fs.readdirSync(VIDEOS_DIR);
+    const matched = files.find(f => f.startsWith(video.id));
+    if (matched) {
+      return { sourcePath: path.join(VIDEOS_DIR, matched), isTemporary: false };
+    }
+  }
+
+  throw new Error(`Video source file not found for video ${video.id}`);
+}
+
+/**
+ * Streams the watermarked video file to the client with appropriate headers.
+ */
+async function executeWatermarkedDownloadStream({
+  downloadRecord,
+  video,
+  user,
+  req,
+  res,
+}) {
+  const clientAbortController = new AbortController();
+  let isClientDisconnected = false;
+
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      isClientDisconnected = true;
+      clientAbortController.abort();
+    }
+  });
+
+  let resolvedSource = null;
+  let finalWatermarkedPath = null;
+
+  try {
+    // 1. Resolve source video file
+    resolvedSource = await resolveVideoSource(video, clientAbortController.signal);
+
+    // 2. Generate personalized watermark text
+    const watermarkText = buildWatermarkText(user);
+    finalWatermarkedPath = getWatermarkedPath(downloadRecord._id, video.id);
+
+    // 3. Render watermark via FFmpeg
+    await applyWatermark({
+      inputPath: resolvedSource.sourcePath,
+      outputPath: finalWatermarkedPath,
+      watermarkText,
+      signal: clientAbortController.signal,
+    });
+
+    // Clean up temporary fetched remote video source
+    if (resolvedSource.isTemporary && fs.existsSync(resolvedSource.sourcePath)) {
+      try { fs.unlinkSync(resolvedSource.sourcePath); } catch {}
+    }
+
+    if (!fs.existsSync(finalWatermarkedPath)) {
+      throw new Error('Watermarked video generation did not produce an output file.');
+    }
+
+    const stat = fs.statSync(finalWatermarkedPath);
+    const safeFilename = sanitizeFilename(video.title, video.id);
+
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Cache-Control', 'private, no-transform, no-store');
+
+    const fileStream = fs.createReadStream(finalWatermarkedPath);
+    let bytesTransferred = 0;
+
+    fileStream.on('data', chunk => {
+      bytesTransferred += chunk.length;
+    });
+
+    fileStream.pipe(res);
+
+    const markCompleted = async () => {
+      if (downloadRecord.status === 'completed') return;
+      try {
+        downloadRecord.status = 'completed';
+        downloadRecord.completedAt = new Date();
+        downloadRecord.fileSize = stat.size;
+        downloadRecord.bytesDownloaded = bytesTransferred;
+        downloadRecord.isWatermarked = true;
+        downloadRecord.watermarkText = watermarkText;
+        downloadRecord.watermarkedPath = finalWatermarkedPath;
+        await downloadRecord.save();
+      } catch (saveErr) {
+        console.error('[Download Completion Save Error]', saveErr);
+      }
+    };
+
+    fileStream.on('end', markCompleted);
+    res.on('finish', markCompleted);
+
+    fileStream.on('error', async streamErr => {
+      console.warn(`[Download Stream Error for ${video.id}]`, streamErr.message);
+      try {
+        downloadRecord.status = isClientDisconnected ? 'interrupted' : 'failed';
+        downloadRecord.errorMessage = streamErr.message;
+        downloadRecord.bytesDownloaded = bytesTransferred;
+        await downloadRecord.save();
+      } catch {}
+    });
+
+    res.on('close', async () => {
+      if (!res.writableEnded) {
+        try {
+          if (downloadRecord.status === 'reserved') {
+            downloadRecord.status = 'interrupted';
+            downloadRecord.errorMessage = 'Client cancelled or disconnected during download transfer.';
+            downloadRecord.bytesDownloaded = bytesTransferred;
+            await downloadRecord.save();
+          }
+        } catch {}
+      }
+    });
+  } catch (err) {
+    if (resolvedSource && resolvedSource.isTemporary && fs.existsSync(resolvedSource.sourcePath)) {
+      try { fs.unlinkSync(resolvedSource.sourcePath); } catch {}
+    }
+
+    // Roll back reservation so failed generation does not consume quota
+    downloadRecord.status = isClientDisconnected ? 'interrupted' : 'failed';
+    downloadRecord.errorMessage = err.message;
+    await downloadRecord.save();
+
+    console.error(`[Download Execution Error for ${video.id}]`, err.message);
+    if (!res.headersSent) {
+      res.status(502).json({
+        error: 'Failed to generate or deliver watermarked video.',
+        code: 'WATERMARK_PROCESSING_ERROR',
+        details: err.message,
+      });
+    }
+  }
+}
+
+/**
  * GET /api/downloads/status
- *
  * Returns current authenticated user's daily download quota status.
  */
 router.get('/downloads/status', requireAuth, async (req, res) => {
@@ -173,9 +365,7 @@ router.get('/downloads/status', requireAuth, async (req, res) => {
 
 /**
  * GET /api/downloads/history
- *
  * Returns list of user's download attempts (completed, interrupted, failed).
- * Excludes soft-deleted entries.
  */
 router.get('/downloads/history', requireAuth, async (req, res) => {
   try {
@@ -184,22 +374,9 @@ router.get('/downloads/history', requireAuth, async (req, res) => {
       isDeleted: { $ne: true },
     })
       .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
+      .limit(100);
 
-    const safeHistory = history.map(d => ({
-      id: d._id.toString(),
-      videoId: d.videoId,
-      videoTitle: d.videoTitle,
-      channelName: d.channelName,
-      thumbnailUrl: d.thumbnailUrl,
-      status: d.status,
-      fileSize: d.fileSize,
-      bytesDownloaded: d.bytesDownloaded,
-      errorMessage: d.errorMessage,
-      createdAt: d.createdAt,
-      completedAt: d.completedAt,
-    }));
+    const safeHistory = history.map(d => d.toSafeObject());
 
     res.json({
       total: safeHistory.length,
@@ -213,9 +390,7 @@ router.get('/downloads/history', requireAuth, async (req, res) => {
 
 /**
  * DELETE /api/downloads/:id
- *
  * Removes a download entry from user's visible download history.
- * Does NOT delete the video or alter user accounts.
  */
 router.delete('/downloads/:id', requireAuth, async (req, res) => {
   try {
@@ -246,21 +421,17 @@ router.delete('/downloads/:id', requireAuth, async (req, res) => {
 });
 
 /**
- * GET /api/videos/:id/download
+ * POST /api/videos/:id/download-ticket
  *
- * Initiates an authenticated, controlled video download stream.
- * - Authenticated: requireAuth (Free and all tiers allowed)
- * - Quota: 5 distinct videos per 24 hours. Re-downloads within window do not consume quota.
- * - Concurrency: Safely reserves a slot atomically.
- * - Security: Validates remote origin, HTTPS only, no user-supplied URLs, no unapproved redirects.
- * - Streaming: Bounded memory pipe with abort signals on disconnect.
+ * Atomically checks quota, reserves a download slot in MongoDB via versioned CAS,
+ * and issues a cryptographically signed, short-lived download authorization token.
  */
-router.get('/videos/:id/download', requireAuth, async (req, res) => {
+router.post('/videos/:id/download-ticket', requireAuth, async (req, res) => {
   const { id } = req.params;
   const userId = req.user._id;
 
   try {
-    // 1. Verify video exists in MongoDB
+    // 1. Verify video exists
     const video = await Video.findOne({
       $or: [
         { id },
@@ -275,7 +446,7 @@ router.get('/videos/:id/download', requireAuth, async (req, res) => {
       });
     }
 
-    // 2. Check and enforce 24-hour distinct video quota
+    // 2. Check quota
     const quotaInfo = await getUserQuotaInfo(userId, req.user);
     const isAlreadyDownloaded = quotaInfo.distinctVideoIds.includes(video.id);
     const dailyLimit = quotaInfo.limit === null ? Infinity : quotaInfo.limit;
@@ -289,166 +460,380 @@ router.get('/videos/:id/download', requireAuth, async (req, res) => {
       });
     }
 
-    // 3. Atomically reserve slot in MongoDB
-    const downloadRecord = new Download({
-      userId,
-      videoId: video.id,
-      videoTitle: video.title,
-      channelName: video.channel?.name || '',
-      thumbnailUrl: video.thumbnailUrl || '',
-      status: 'reserved',
-      reservedAt: new Date(),
-      sourceUrl: video.videoUrl || '',
-    });
-    await downloadRecord.save();
+    // 3. Atomically reserve slot via CAS
+    let downloadRecord = null;
+    const MAX_RETRIES = 3;
+    let attempts = 0;
 
-    // 3b. Concurrency guard: re-verify distinct chronological order in case of simultaneous requests
-    // Gold/VIP has no quota limit, so skip the concurrency check for them
-    if (!isAlreadyDownloaded && dailyLimit !== Infinity) {
-      const windowStart = new Date(Date.now() - QUOTA_WINDOW_MS);
-      const allActive = await Download.find({
-        userId,
-        createdAt: { $gte: windowStart },
-        status: { $in: ['completed', 'reserved'] },
-      }).sort({ createdAt: 1 }).lean();
+    while (attempts < MAX_RETRIES && !downloadRecord) {
+      attempts++;
+      const userDoc = await User.findById(userId);
+      if (!userDoc) {
+        return res.status(401).json({ error: 'User not found.', code: 'USER_NOT_FOUND' });
+      }
 
-      // Collect distinct video IDs in order of first appearance
-      const firstAllowedVideos = [];
-      for (const rec of allActive) {
-        if (!firstAllowedVideos.includes(rec.videoId)) {
-          firstAllowedVideos.push(rec.videoId);
-          if (firstAllowedVideos.length === dailyLimit) break;
+      const qInfo = await getUserQuotaInfo(userId, userDoc);
+      const isAlready = qInfo.distinctVideoIds.includes(video.id);
+      const currentLimit = qInfo.limit === null ? Infinity : qInfo.limit;
+
+      if (!isAlready && currentLimit !== Infinity && qInfo.remaining <= 0) {
+        const videoWord = currentLimit === 1 ? 'video' : 'videos';
+        return res.status(429).json({
+          error: `Daily download quota exceeded (limit: ${currentLimit} distinct ${videoWord} per 24 hours for ${qInfo.tier} plan).`,
+          code: 'QUOTA_EXCEEDED',
+          quota: qInfo,
+        });
+      }
+
+      const currentVersion = userDoc.quotaReservationVersion || 0;
+      if (!isAlready && currentLimit !== Infinity) {
+        const casResult = await User.updateOne(
+          { _id: userId, quotaReservationVersion: currentVersion },
+          { $inc: { quotaReservationVersion: 1 } }
+        );
+        if (casResult.matchedCount === 0 || casResult.modifiedCount === 0) {
+          continue;
         }
       }
 
-      // If this video ID did not make the top allowed distinct slots due to a race
-      if (!firstAllowedVideos.includes(video.id)) {
-        downloadRecord.status = 'failed';
-        downloadRecord.errorMessage = 'Concurrency race: daily quota limit reached by simultaneous request.';
-        await downloadRecord.save();
+      const rec = new Download({
+        userId,
+        videoId: video.id,
+        videoTitle: video.title,
+        channelName: video.channel?.name || '',
+        thumbnailUrl: video.thumbnailUrl || '',
+        status: 'reserved',
+        reservedAt: new Date(),
+        sourceUrl: video.videoUrl || '',
+      });
+      await rec.save();
+      downloadRecord = rec;
+    }
 
+    if (!downloadRecord) {
+      return res.status(429).json({
+        error: 'Concurrent download conflict. Daily quota limit reached.',
+        code: 'QUOTA_EXCEEDED',
+        quota: await getUserQuotaInfo(userId, req.user),
+      });
+    }
+
+    // 4. Generate signed download authorization token (15-minute expiration)
+    const tokenData = generateDownloadToken({
+      downloadId: downloadRecord._id,
+      videoId: video.id,
+      userId,
+      expiresInSeconds: 900,
+    });
+
+    downloadRecord.downloadTokenHash = tokenData.downloadTokenHash;
+    downloadRecord.tokenExpiresAt = tokenData.expiresAt;
+    await downloadRecord.save();
+
+    const updatedQuota = await getUserQuotaInfo(userId, req.user);
+
+    res.json({
+      success: true,
+      downloadId: downloadRecord._id.toString(),
+      downloadUrl: `/api/downloads/download?token=${tokenData.token}`,
+      expiresAt: tokenData.expiresAt,
+      quota: updatedQuota,
+    });
+  } catch (err) {
+    console.error('[Download Ticket Error]', err);
+    res.status(500).json({ error: 'Failed to generate download ticket.' });
+  }
+});
+
+/**
+ * GET /api/downloads/download
+ *
+ * Validates the cryptographically signed download token, enforces expiration
+ * and single-use link security, renders user watermark, and streams the MP4 file.
+ */
+router.get('/downloads/download', async (req, res) => {
+  const token = req.query.token;
+
+  if (!token) {
+    return res.status(400).json({
+      error: 'Signed download token is required.',
+      code: 'MISSING_TOKEN',
+    });
+  }
+
+  // 1. Verify signed token signature and expiry
+  const verification = verifyDownloadToken(token);
+  if (!verification.valid) {
+    if (verification.code === 'TOKEN_EXPIRED') {
+      return res.status(410).json({
+        error: 'Download link has expired. Please generate a new download request.',
+        code: 'TOKEN_EXPIRED',
+      });
+    }
+    if (verification.code === 'INVALID_SIGNATURE') {
+      return res.status(403).json({
+        error: 'Invalid download link signature. URL tampering detected.',
+        code: 'INVALID_SIGNATURE',
+      });
+    }
+    return res.status(400).json({
+      error: verification.error || 'Invalid download token format.',
+      code: verification.code || 'INVALID_TOKEN',
+    });
+  }
+
+  const { downloadId, videoId, userId } = verification.payload;
+
+  try {
+    // 2. Fetch the reservation record
+    const downloadRecord = await Download.findById(downloadId);
+    if (!downloadRecord || downloadRecord.isDeleted) {
+      return res.status(404).json({
+        error: 'Download authorization record not found or was removed.',
+        code: 'DOWNLOAD_NOT_FOUND',
+      });
+    }
+
+    // 3. Enforce single-use link prevention: Completed tokens cannot be re-executed
+    if (downloadRecord.status === 'completed') {
+      return res.status(403).json({
+        error: 'This download link has already been used. Please request a fresh download ticket.',
+        code: 'TOKEN_ALREADY_USED',
+      });
+    }
+
+    // 4. Verify binding to user and video
+    if (downloadRecord.userId.toString() !== userId || downloadRecord.videoId !== videoId) {
+      return res.status(403).json({
+        error: 'Download authorization mismatch.',
+        code: 'TOKEN_MISMATCH',
+      });
+    }
+
+    // 5. Fetch user and video documents
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(401).json({ error: 'Authorized user not found.', code: 'USER_NOT_FOUND' });
+    }
+
+    const video = await Video.findOne({
+      $or: [
+        { id: videoId },
+        ...(mongoose.Types.ObjectId.isValid(videoId) ? [{ _id: videoId }] : []),
+      ],
+    }).lean();
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found.', code: 'VIDEO_NOT_FOUND' });
+    }
+
+    // 6. Execute watermarked video delivery
+    await executeWatermarkedDownloadStream({
+      downloadRecord,
+      video,
+      user,
+      req,
+      res,
+    });
+  } catch (err) {
+    console.error('[Download Execution Error]', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to process secure download.' });
+    }
+  }
+});
+
+/**
+ * GET /api/videos/:id/download
+ *
+ * Backward-compatible download endpoint.
+ * If called with ?token=..., validates signed token.
+ * If called by authenticated user, performs atomic reservation, watermarking, and streaming.
+ */
+router.get('/videos/:id/download', async (req, res, next) => {
+  // If token is present, delegate directly to the signed token download handler
+  if (req.query.token) {
+    return router.handle({ ...req, url: `/downloads/download?token=${req.query.token}` }, res, next);
+  }
+
+  // Otherwise, require authentication and process directly
+  return requireAuth(req, res, async () => {
+    const { id } = req.params;
+    const userId = req.user._id;
+
+    try {
+      const video = await Video.findOne({
+        $or: [
+          { id },
+          ...(mongoose.Types.ObjectId.isValid(id) ? [{ _id: id }] : []),
+        ],
+      }).lean();
+
+      if (!video) {
+        return res.status(404).json({ error: 'Video not found.', code: 'VIDEO_NOT_FOUND' });
+      }
+
+      const quotaInfo = await getUserQuotaInfo(userId, req.user);
+      const isAlreadyDownloaded = quotaInfo.distinctVideoIds.includes(video.id);
+      const dailyLimit = quotaInfo.limit === null ? Infinity : quotaInfo.limit;
+
+      if (!isAlreadyDownloaded && quotaInfo.remaining <= 0) {
         const videoWord = dailyLimit === 1 ? 'video' : 'videos';
         return res.status(429).json({
           error: `Daily download quota exceeded (limit: ${dailyLimit} distinct ${videoWord} per 24 hours for ${quotaInfo.tier} plan).`,
           code: 'QUOTA_EXCEEDED',
-          quota: {
-            limit: dailyLimit,
-            used: dailyLimit,
-            remaining: 0,
-            tier: quotaInfo.tier,
-          },
+          quota: quotaInfo,
         });
       }
+
+      // CAS reservation
+      let downloadRecord = null;
+      let attempts = 0;
+      while (attempts < 3 && !downloadRecord) {
+        attempts++;
+        const userDoc = await User.findById(userId);
+        if (!userDoc) return res.status(401).json({ error: 'User not found.' });
+
+        const qInfo = await getUserQuotaInfo(userId, userDoc);
+        const isAlready = qInfo.distinctVideoIds.includes(video.id);
+        const currentLimit = qInfo.limit === null ? Infinity : qInfo.limit;
+
+        if (!isAlready && currentLimit !== Infinity && qInfo.remaining <= 0) {
+          return res.status(429).json({
+            error: 'Daily download quota exceeded.',
+            code: 'QUOTA_EXCEEDED',
+            quota: qInfo,
+          });
+        }
+
+        const currentVersion = userDoc.quotaReservationVersion || 0;
+        if (!isAlready && currentLimit !== Infinity) {
+          const casResult = await User.updateOne(
+            { _id: userId, quotaReservationVersion: currentVersion },
+            { $inc: { quotaReservationVersion: 1 } }
+          );
+          if (casResult.matchedCount === 0 || casResult.modifiedCount === 0) continue;
+        }
+
+        const rec = new Download({
+          userId,
+          videoId: video.id,
+          videoTitle: video.title,
+          channelName: video.channel?.name || '',
+          thumbnailUrl: video.thumbnailUrl || '',
+          status: 'reserved',
+          reservedAt: new Date(),
+          sourceUrl: video.videoUrl || '',
+        });
+        await rec.save();
+        downloadRecord = rec;
+      }
+
+      if (!downloadRecord) {
+        return res.status(429).json({
+          error: 'Concurrent download conflict. Quota limit reached.',
+          code: 'QUOTA_EXCEEDED',
+        });
+      }
+
+      await executeWatermarkedDownloadStream({
+        downloadRecord,
+        video,
+        user: req.user,
+        req,
+        res,
+      });
+    } catch (err) {
+      console.error('[Direct Download Error]', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to process download request.' });
+      }
+    }
+  });
+});
+
+/**
+ * POST /api/downloads/:id/offline-auth
+ *
+ * Issues a short-lived offline playback authorization token for a completed download.
+ */
+router.post('/downloads/:id/offline-auth', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid download ID format.' });
     }
 
-    // 4. Setup client disconnect abort controller
-    const clientAbortController = new AbortController();
-    let isClientDisconnected = false;
-
-    req.on('close', () => {
-      // If request finishes normally, res.writableEnded is true.
-      if (!res.writableEnded) {
-        isClientDisconnected = true;
-        clientAbortController.abort();
-      }
+    const record = await Download.findOne({
+      _id: id,
+      userId: req.user._id,
+      status: 'completed',
+      isDeleted: { $ne: true },
     });
 
-    // 5. Fetch remote video safely before sending response headers
-    let fetchResult;
-    try {
-      fetchResult = await safeFetchVideo(
-        video.videoUrl,
-        video.fallbackUrl,
-        clientAbortController.signal
-      );
-    } catch (originErr) {
-      // Failed before sending headers: mark as failed
-      downloadRecord.status = 'failed';
-      downloadRecord.errorMessage = originErr.message;
-      await downloadRecord.save();
-
-      console.error(`[Download Origin Error for ${video.id}]`, originErr.message);
-      return res.status(502).json({
-        error: 'The video source file is currently unreachable from origin servers.',
-        code: 'ORIGIN_UNREACHABLE',
-        details: originErr.message,
+    if (!record) {
+      return res.status(404).json({
+        error: 'Completed download record not found for offline authorization.',
+        code: 'DOWNLOAD_NOT_COMPLETED',
       });
     }
 
-    const { response, isByteRangeSupported, contentLength } = fetchResult;
+    // Determine authorization duration based on plan:
+    // Gold: 7 days, Silver: 3 days, Bronze/Free: 48 hours
+    const tier = req.user.getEffectiveTier ? req.user.getEffectiveTier() : 'free';
+    const expiresInSeconds = tier === 'gold' ? 7 * 24 * 3600 : tier === 'silver' ? 3 * 24 * 3600 : 48 * 3600;
 
-    // 6. Set Content-Disposition and verified streaming headers
-    const safeFilename = sanitizeFilename(video.title, video.id);
-
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
-    res.setHeader('Cache-Control', 'private, no-transform, no-store');
-
-    if (contentLength > 0) {
-      res.setHeader('Content-Length', contentLength);
-    }
-
-    // Only claim byte ranges if verified by remote response
-    if (isByteRangeSupported) {
-      res.setHeader('Accept-Ranges', 'bytes');
-    }
-
-    // 7. Stream with bounded memory using Node.js stream
-    const nodeStream = Readable.fromWeb(response.body);
-    let bytesTransferred = 0;
-
-    nodeStream.on('data', chunk => {
-      bytesTransferred += chunk.length;
+    const tokenData = generateOfflinePlaybackToken({
+      downloadId: record._id,
+      videoId: record.videoId,
+      userId: req.user._id,
+      expiresInSeconds,
     });
 
-    nodeStream.pipe(res);
+    record.offlineAuthTokenHash = tokenData.tokenHash;
+    record.offlineAuthExpiresAt = tokenData.expiresAt;
+    await record.save();
 
-    nodeStream.on('end', async () => {
-      // Entire stream finished successfully
-      try {
-        downloadRecord.status = 'completed';
-        downloadRecord.completedAt = new Date();
-        downloadRecord.fileSize = contentLength > 0 ? contentLength : bytesTransferred;
-        downloadRecord.bytesDownloaded = bytesTransferred;
-        await downloadRecord.save();
-      } catch (saveErr) {
-        console.error('[Download Completion Save Error]', saveErr);
-      }
-    });
-
-    nodeStream.on('error', async streamErr => {
-      console.warn(`[Download Stream Error for ${video.id}]`, streamErr.message);
-      try {
-        downloadRecord.status = isClientDisconnected ? 'interrupted' : 'failed';
-        downloadRecord.errorMessage = streamErr.message;
-        downloadRecord.bytesDownloaded = bytesTransferred;
-        await downloadRecord.save();
-      } catch (err) {
-        // ignore
-      }
-    });
-
-    res.on('close', async () => {
-      if (!res.writableEnded) {
-        // Client disconnected mid-transfer
-        try {
-          if (downloadRecord.status === 'reserved') {
-            downloadRecord.status = 'interrupted';
-            downloadRecord.errorMessage = 'Client cancelled or disconnected during download transfer.';
-            downloadRecord.bytesDownloaded = bytesTransferred;
-            await downloadRecord.save();
-          }
-        } catch (err) {
-          // ignore
-        }
-      }
+    res.json({
+      success: true,
+      offlineToken: tokenData.token,
+      expiresAt: tokenData.expiresAt,
+      videoId: record.videoId,
+      licenseType: 'offline-playback-v1',
+      limitations: 'Browser storage does not provide hardware DRM protection. Offline authorization validates user playback permission locally.',
     });
   } catch (err) {
-    console.error('[Download Handler Error]', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to process download request.' });
-    }
+    console.error('[Offline Auth Error]', err);
+    res.status(500).json({ error: 'Failed to generate offline authorization.' });
   }
+});
+
+/**
+ * GET /api/downloads/offline-verify
+ *
+ * Validates an offline playback authorization token.
+ */
+router.get('/downloads/offline-verify', async (req, res) => {
+  const token = req.query.token;
+
+  if (!token) {
+    return res.status(400).json({ error: 'Offline token is required.', valid: false });
+  }
+
+  const result = verifyOfflinePlaybackToken(token);
+  if (!result.valid) {
+    return res.status(401).json({
+      valid: false,
+      error: result.error,
+      code: result.code,
+    });
+  }
+
+  res.json({
+    valid: true,
+    payload: result.payload,
+  });
 });
 
 module.exports = router;

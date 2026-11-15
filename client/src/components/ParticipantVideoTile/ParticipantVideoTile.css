@@ -1,0 +1,266 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   ParticipantVideoTile — Group Call Video Tile
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.pvt {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-secondary, #1a1a2e);
+  border: 2px solid transparent;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pvt--self {
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
+.pvt--speaking {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.45) !important;
+}
+
+.pvt--remote {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.pvt--connecting {
+  border-color: rgba(234, 179, 8, 0.4);
+}
+
+.pvt--failed {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* ── Video Element ─────────────────────────────────────────────────────────── */
+.pvt__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Avatar Fallback ───────────────────────────────────────────────────────── */
+.pvt__avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  z-index: 1;
+}
+
+.pvt__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.pvt__connecting-label {
+  font-size: 0.72rem;
+  color: var(--text-muted, #9ca3af);
+  margin: 0;
+  animation: pvt-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pvt-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Top Left Badges ──────────────────────────────────────────────────────── */
+.pvt__badges-top-left {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pvt__hand-badge {
+  background: rgba(234, 179, 8, 0.9);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  backdrop-filter: blur(4px);
+  animation: pvt-pulse 1s infinite alternate;
+}
+
+/* ── Screen Share Badge ────────────────────────────────────────────────────── */
+.pvt__screen-badge {
+  background: rgba(99, 102, 241, 0.85);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  backdrop-filter: blur(4px);
+}
+
+/* ── Status Row (top-right) ────────────────────────────────────────────────── */
+.pvt__status-row {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pvt__role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  backdrop-filter: blur(4px);
+}
+
+.pvt__role-chip--host {
+  background: rgba(234, 179, 8, 0.25);
+  border: 1px solid rgba(234, 179, 8, 0.5);
+  color: #fbbf24;
+}
+
+.pvt__role-chip--cohost {
+  background: rgba(147, 51, 234, 0.25);
+  border: 1px solid rgba(147, 51, 234, 0.5);
+  color: #c084fc;
+}
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pvt__status-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  backdrop-filter: blur(4px);
+}
+
+.pvt__status-chip--muted {
+  background: rgba(239, 68, 68, 0.75);
+  color: #fff;
+}
+
+.pvt__status-chip--vidoff {
+  background: rgba(107, 114, 128, 0.75);
+  color: #fff;
+}
+
+.pvt__conn-icon {
+  color: var(--text-muted, #9ca3af);
+}
+
+.pvt__conn-icon--ok  { color: #22c55e; }
+.pvt__conn-icon--bad { color: #ef4444; }
+
+.pvt__spin {
+  animation: pvt-spin 1s linear infinite;
+}
+
+@keyframes pvt-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Footer Row (Name & Mod Actions) ───────────────────────────────────────── */
+.pvt__footer-row {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.pvt__name-tag {
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
+  max-width: 70%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+}
+
+.pvt__mod-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.pvt__mod-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  font-size: 11px;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.pvt__mod-btn--mute {
+  background: rgba(239, 68, 68, 0.85);
+}
+
+.pvt__mod-btn--kick {
+  background: rgba(31, 41, 55, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pvt__mod-btn:hover {
+  transform: scale(1.15);
+}
+

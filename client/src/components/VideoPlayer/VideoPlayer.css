@@ -589,6 +589,23 @@
   animation: fadeIn 0.15s ease-out;
 }
 
+.video-player__hover-preview--with-thumb {
+  padding: 4px;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.video-player__hover-thumb {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
 .video-player__hover-time {
   font-size: 11.5px;
   font-weight: 600;
@@ -688,6 +705,89 @@
   flex-grow: 1;
 }
 
+/* ── Phase 2 Step 4: Video Quality Menu ── */
+.video-player__quality-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.video-player__quality-btn {
+  position: relative;
+}
+
+.video-player__quality-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  background: rgba(18, 18, 28, 0.95);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) 0;
+  min-width: 140px;
+  max-height: 250px;
+  overflow-y: auto;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-player__quality-header {
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: var(--space-1);
+}
+
+.video-player__quality-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-3);
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  width: 100%;
+}
+
+.video-player__quality-item:hover,
+.video-player__quality-item:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  outline: none;
+}
+
+.video-player__quality-item--active {
+  color: var(--color-brand-primary);
+  font-weight: 600;
+}
+
+.video-player__quality-check {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-brand-primary);
+  flex-shrink: 0;
+}
+
+.video-player__quality-text {
+  flex-grow: 1;
+}
+
 /* ── WebVTT Subtitle Cue Styling ── */
 .video-player video::cue {
   background-color: rgba(10, 10, 18, 0.88);
@@ -708,6 +808,9 @@
   .video-player__speed-btn { font-size: 11px; min-width: 28px; height: 28px; }
   .video-player__speed-menu { min-width: 125px; bottom: calc(100% + 6px); }
   .video-player__subtitle-menu { min-width: 130px; bottom: calc(100% + 6px); right: -10px; }
+  .video-player__quality-btn { font-size: 11px; min-width: 28px; height: 28px; }
+  .video-player__quality-menu { min-width: 125px; bottom: calc(100% + 6px); right: -10px; }
+  .video-player__hover-preview--with-thumb { max-width: 140px; }
   .video-player__autoplay-thumb { width: 90px; }
   .video-player__autoplay-title { font-size: 12px; }
   .video-player__resume-toast { font-size: 11px; padding: 4px 10px; top: var(--space-2); right: var(--space-2); }

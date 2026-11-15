@@ -108,6 +108,7 @@ export default function WatchPage() {
         {/* ── Player Wrapper (persists across theater mode without unmounting) ── */}
         <div className="watch-page__player-wrapper">
           <VideoPlayer
+            key={video.id}
             video={video}
             isTheaterMode={isTheaterMode}
             onToggleTheaterMode={() => setIsTheaterMode(t => !t)}

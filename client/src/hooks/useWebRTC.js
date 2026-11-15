@@ -195,6 +195,7 @@ export function useWebRTC({
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isAudioOnly, setIsAudioOnly] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [mediaError, setMediaError] = useState(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
@@ -209,6 +210,7 @@ export function useWebRTC({
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const mediaPromiseRef = useRef(null);
   const earlyCandidatesRef = useRef([]);
@@ -392,6 +394,19 @@ export function useWebRTC({
     iceServersRef.current = null;
     iceFetchPromiseRef.current = null;
     mediaPromiseRef.current = null;
+
+    // 0. Stop any active screen sharing tracks
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // Ignore
+        }
+      });
+      screenStreamRef.current = null;
+    }
+    setIsScreenSharing(false);
 
     // 1. Stop all tracks on local stream
     if (localStreamRef.current) {
@@ -832,14 +847,14 @@ export function useWebRTC({
 
   // Keep local video element source synchronized
   useEffect(() => {
-    if (localVideoRef.current && localStreamRef.current) {
+    if (localVideoRef.current && localStreamRef.current && !isScreenSharing) {
       localVideoRef.current.muted = true;
       if (localVideoRef.current.srcObject !== localStreamRef.current) {
         localVideoRef.current.srcObject = localStreamRef.current;
       }
       localVideoRef.current.play().catch(() => {});
     }
-  }, [localStream, isVideoOff]);
+  }, [localStream, isVideoOff, isScreenSharing]);
 
   // Keep remote video element source synchronized
   useEffect(() => {
@@ -853,7 +868,7 @@ export function useWebRTC({
     }
   }, [remoteStream]);
 
-  // ── 7. Media Controls (Mute / Camera Toggle) ────────────────────────────────
+  // ── 7. Media Controls (Mute / Camera Toggle / Screen Share) ─────────────────
   const toggleMute = useCallback(() => {
     if (!localStreamRef.current) return;
     const audioTracks = localStreamRef.current.getAudioTracks();
@@ -878,6 +893,114 @@ export function useWebRTC({
     setIsVideoOff(!willEnable);
   }, [isVideoOff, isAudioOnly]);
 
+  const stopScreenShare = useCallback(async () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // Ignore
+        }
+      });
+      screenStreamRef.current = null;
+    }
+
+    setIsScreenSharing(false);
+
+    // Restore camera video track on RTCPeerConnection sender
+    const pc = pcRef.current;
+    const cameraTrack = (localStreamRef.current && !isAudioOnly)
+      ? (localStreamRef.current.getVideoTracks()[0] || null)
+      : null;
+
+    if (pc && pc.getSenders) {
+      const senders = pc.getSenders();
+      const videoSender = senders.find((s) => s.track && s.track.kind === 'video') ||
+        senders.find((s) => s.kind === 'video');
+      if (videoSender) {
+        try {
+          await videoSender.replaceTrack(cameraTrack);
+        } catch (rErr) {
+          console.warn('[WebRTC] Error restoring camera track on sender:', rErr);
+        }
+      }
+    }
+
+    // Restore local video preview to local camera stream
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [isAudioOnly]);
+
+  const startScreenShare = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      if (showToastRef.current) {
+        showToastRef.current('Screen sharing is not supported by your browser.', 'error');
+      }
+      return;
+    }
+
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: false,
+      });
+
+      const screenVideoTrack = screenStream.getVideoTracks()[0];
+      if (!screenVideoTrack) {
+        screenStream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      screenStreamRef.current = screenStream;
+      setIsScreenSharing(true);
+
+      // Handle browser's native "Stop sharing" control
+      screenVideoTrack.onended = () => {
+        stopScreenShare();
+      };
+
+      // Replace outgoing video track on RTCPeerConnection
+      const pc = pcRef.current;
+      if (pc && pc.getSenders) {
+        const senders = pc.getSenders();
+        const videoSender = senders.find((s) => s.track && s.track.kind === 'video') ||
+          senders.find((s) => s.kind === 'video');
+        if (videoSender) {
+          await videoSender.replaceTrack(screenVideoTrack);
+        } else {
+          try {
+            pc.addTrack(screenVideoTrack, screenStream);
+          } catch (addErr) {
+            console.warn('[WebRTC] Error adding screen track to peer connection:', addErr);
+          }
+        }
+      }
+
+      // Update local preview element with screen share stream
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream;
+        localVideoRef.current.play().catch(() => {});
+      }
+    } catch (err) {
+      if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+        console.warn('[WebRTC] getDisplayMedia error:', err);
+        if (showToastRef.current) {
+          showToastRef.current(`Could not start screen sharing: ${err.message}`, 'error');
+        }
+      }
+    }
+  }, [stopScreenShare]);
+
+  const toggleScreenShare = useCallback(() => {
+    if (isScreenSharing) {
+      stopScreenShare();
+    } else {
+      startScreenShare();
+    }
+  }, [isScreenSharing, startScreenShare, stopScreenShare]);
+
   const resumeAutoplay = useCallback(() => {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.play()
@@ -896,10 +1019,14 @@ export function useWebRTC({
     isMuted,
     isVideoOff,
     isAudioOnly,
+    isScreenSharing,
     mediaError,
     autoplayBlocked,
     toggleMute,
     toggleVideo,
+    startScreenShare,
+    stopScreenShare,
+    toggleScreenShare,
     retryMedia: startMedia,
     resumeAutoplay,
     cleanup,

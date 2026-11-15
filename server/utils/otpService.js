@@ -19,18 +19,20 @@ const devOtpRegistry = new Map();
 /**
  * Periodically purge expired dev OTP registry entries
  */
-setInterval(() => {
-  if (process.env.NODE_ENV === 'production') {
-    devOtpRegistry.clear();
-    return;
-  }
-  const now = Date.now();
-  for (const [sessionId, entry] of devOtpRegistry.entries()) {
-    if (entry.expiresAt < now) {
-      devOtpRegistry.delete(sessionId);
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    if (process.env.NODE_ENV === 'production') {
+      devOtpRegistry.clear();
+      return;
     }
-  }
-}, 60000);
+    const now = Date.now();
+    for (const [sessionId, entry] of devOtpRegistry.entries()) {
+      if (entry.expiresAt < now) {
+        devOtpRegistry.delete(sessionId);
+      }
+    }
+  }, 60000);
+}
 
 /**
  * Generates a uniformly distributed 6-digit numeric OTP code.
